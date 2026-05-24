@@ -67,7 +67,7 @@ watson = WatsonLite()
 answer = watson.answer("Who designed the Eiffel Tower?")
 
 print(answer.answer)        # "Gustave Eiffel"
-print(answer.confidence)    # 0.847
+print(answer.confidence)    # 0.752
 print(answer.source)        # "Eiffel Tower"
 ```
 
