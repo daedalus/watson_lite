@@ -79,6 +79,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Enable/disable temporal/geospatial consistency checks",
     )
+    parser.add_argument(
+        "--answer-merging",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable merging equivalent answers via Wikidata QID",
+    )
 
     parser.add_argument("--wiki-top-k", type=int, default=5)
     parser.add_argument(
@@ -117,6 +123,7 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         type_coercion=args.type_coercion,
         term_match=args.term_match,
         consistency=args.consistency,
+        answer_merging=args.answer_merging,
         dataset_sources=args.datasets,
         wikipedia_top_k_per_query=args.wiki_top_k,
         retrieval_top_k=args.retrieval_top_k,

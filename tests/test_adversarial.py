@@ -2072,3 +2072,202 @@ class TestConsistency:
         )
         assert answer.confidence_breakdown["geospatial_consistency"] == 0.0
         assert answer.confidence_breakdown["temporal_consistency"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Answer merging — Wikidata QID-based candidate deduplication
+# ---------------------------------------------------------------------------
+
+
+class TestAnswerMerging:
+    def test_merge_identical_spans_does_nothing(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        with patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid",
+            return_value=None,
+        ):
+            candidates = [
+                AnswerCandidate(
+                    span="Paris",
+                    source="a",
+                    url="",
+                    passage="",
+                    extraction_score=0.9,
+                    rank=1,
+                ),
+                AnswerCandidate(
+                    span="Paris",
+                    source="b",
+                    url="",
+                    passage="",
+                    extraction_score=0.8,
+                    rank=2,
+                ),
+            ]
+            result = merge_candidates_by_qid(candidates)
+            assert len(result) == 2
+
+    def test_merge_different_spans_same_qid(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        with patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid",
+            side_effect=lambda s: "Q243" if "Eiffel" in s else None,
+        ):
+            candidates = [
+                AnswerCandidate(
+                    span="Gustave Eiffel",
+                    source="a",
+                    url="",
+                    passage="",
+                    extraction_score=0.9,
+                    rank=1,
+                ),
+                AnswerCandidate(
+                    span="Alexandre Gustave Eiffel",
+                    source="b",
+                    url="",
+                    passage="",
+                    extraction_score=0.8,
+                    rank=2,
+                ),
+            ]
+            result = merge_candidates_by_qid(candidates)
+            assert len(result) == 1
+            assert result[0].span == "Gustave Eiffel"
+            assert result[0].extraction_score == 0.9
+
+    def test_merge_preserves_best_rank(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        with patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid",
+            return_value="Q243",
+        ):
+            candidates = [
+                AnswerCandidate(
+                    span="Eiffel",
+                    source="a",
+                    url="",
+                    passage="",
+                    extraction_score=0.7,
+                    rank=10,
+                ),
+                AnswerCandidate(
+                    span="Gustave Eiffel",
+                    source="b",
+                    url="",
+                    passage="",
+                    extraction_score=0.9,
+                    rank=1,
+                ),
+            ]
+            result = merge_candidates_by_qid(candidates)
+            assert len(result) == 1
+            assert result[0].rank == 1
+
+    def test_merge_different_qids_keeps_separate(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        with patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid",
+            side_effect=lambda s: {"Paris": "Q90", "London": "Q84"}.get(s),
+        ):
+            candidates = [
+                AnswerCandidate(
+                    span="Paris",
+                    source="a",
+                    url="",
+                    passage="",
+                    extraction_score=0.9,
+                    rank=1,
+                ),
+                AnswerCandidate(
+                    span="London",
+                    source="b",
+                    url="",
+                    passage="",
+                    extraction_score=0.8,
+                    rank=2,
+                ),
+            ]
+            result = merge_candidates_by_qid(candidates)
+            assert len(result) == 2
+
+    def test_merge_empty_list(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        assert merge_candidates_by_qid([]) == []
+
+    def test_merge_single_candidate(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        c = AnswerCandidate(
+            span="Paris",
+            source="a",
+            url="",
+            passage="",
+            extraction_score=0.9,
+            rank=1,
+        )
+        result = merge_candidates_by_qid([c])
+        assert len(result) == 1
+        assert result[0] is c
+
+    def test_merge_integrates_with_confidence_scorer(self) -> None:
+        from watson_lite.scoring.answer_merging import merge_candidates_by_qid
+
+        scorer = ConfidenceScorer()
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="a",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="b",
+                url="",
+                passage="",
+                extraction_score=0.8,
+                rank=2,
+            ),
+        ]
+        with patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid",
+            return_value=None,
+        ):
+            answer = scorer.score(candidates, [], "who")
+            assert answer.answer == "Gustave Eiffel"
+            assert "answer_merging" not in answer.confidence_breakdown
+
+    def test_disabled_via_flag(self) -> None:
+        scorer = ConfidenceScorer()
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="a",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+            AnswerCandidate(
+                span="Paris",
+                source="b",
+                url="",
+                passage="",
+                extraction_score=0.8,
+                rank=2,
+            ),
+        ]
+        with patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid",
+            side_effect=AssertionError("should not be called"),
+        ):
+            answer = scorer.score(candidates, [], "where", enable_answer_merging=False)
+            assert answer.answer == "Paris"

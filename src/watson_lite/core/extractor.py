@@ -12,6 +12,7 @@ from watson_lite.core.models import (
     GraphResult,
     RankedPassage,
 )
+from watson_lite.scoring.answer_merging import merge_candidates_by_qid
 from watson_lite.scoring.consistency import (
     score_geospatial_consistency,
     score_temporal_consistency,
@@ -125,6 +126,7 @@ class ConfidenceScorer:
         enable_type_coercion: bool = True,
         enable_term_match: bool = True,
         enable_consistency: bool = True,
+        enable_answer_merging: bool = True,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -135,6 +137,9 @@ class ConfidenceScorer:
                 url="",
                 confidence_breakdown={"reason": "no candidates"},
             )
+
+        if enable_answer_merging:
+            candidates = merge_candidates_by_qid(candidates)
 
         best = candidates[0]
 

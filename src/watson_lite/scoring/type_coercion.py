@@ -123,7 +123,7 @@ def _fetch_type_hierarchy(qid: str, max_depth: int = 3) -> set[str]:
     return all_ancestors
 
 
-def _resolve_span_to_qid(span: str) -> str | None:
+def resolve_span_to_qid(span: str) -> str | None:
     """Resolve an answer span to a Wikidata QID via the entity search API."""
     cache = get_cache()
     cache_key = f"tc:entity:{span.lower().strip()}"
@@ -172,7 +172,7 @@ def score_type_coercion(
         return 0.0
 
     best = candidates[0]
-    qid = _resolve_span_to_qid(best.span)
+    qid = resolve_span_to_qid(best.span)
     if not qid:
         return 0.0
 

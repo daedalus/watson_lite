@@ -277,6 +277,7 @@ class WatsonLite:
             enable_type_coercion=self.config.type_coercion,
             enable_term_match=self.config.term_match,
             enable_consistency=self.config.consistency,
+            enable_answer_merging=self.config.answer_merging,
         )
         stage_latencies["scoring"] = round(time.perf_counter() - stage_t0, 4)
 

@@ -9,6 +9,14 @@ from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
 class TestConfidenceScorer:
     def setup_method(self) -> None:
         self.scorer = ConfidenceScorer()
+        self.resolve_patcher = patch(
+            "watson_lite.scoring.answer_merging.resolve_span_to_qid"
+        )
+        self.mock_resolve = self.resolve_patcher.start()
+        self.mock_resolve.return_value = None
+
+    def teardown_method(self) -> None:
+        self.resolve_patcher.stop()
 
     def test_no_candidates(self) -> None:
         result = self.scorer.score([], [], "who")
