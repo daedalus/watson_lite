@@ -129,7 +129,7 @@ $ watson-lite "Who was the 44th president of the United States?"
 - **`Ranker`** — RRF fusion + cross-encoder re-ranking.
 - **`ExtractiveReader`** — Span extraction via roberta-base-squad2.
 - **`ConfidenceScorer`** — Multi-signal confidence scoring.
-- **`Cache`** — SQLite3 cache for Wikipedia and Wikidata responses.
+- **`Cache`** — SQLite3 cache for Wikipedia/Wikidata/type-coercion responses with TTL expiry, namespace metrics, and bounded-size pruning.
 
 ## Feature inventory
 

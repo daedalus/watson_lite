@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
+_NEGATIVE_CACHE_TTL_SECONDS = 300
 
 # Wikidata type hierarchy cache: QID -> set of ancestor QIDs
 _type_cache: dict[str, set[str]] = {}
@@ -108,7 +109,7 @@ def _fetch_type_hierarchy(qid: str, max_depth: int = 3) -> set[str]:
         fetched = _batch_fetch_claims(to_fetch)
         next_level: set[str] = set()
 
-        for eid, data in fetched.items():
+        for data in fetched.values():
             for pid_qids in (data.get("P31", []), data.get("P279", [])):
                 for related in pid_qids:
                     if related not in all_ancestors:
@@ -142,14 +143,17 @@ def _resolve_span_to_qid(span: str) -> str | None:
             url, params=params, headers={"User-Agent": USER_AGENT}, timeout=10
         )
         if resp.status_code != 200:
+            cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
             return None
         data = resp.json()
         if data.get("search"):
             qid = str(data["search"][0]["id"])
             cache.set(cache_key, qid)
             return qid
+        cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
     except Exception as e:
         logger.warning("Entity search error for '%s': %s", span, e)
+        cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
     return None
 
 

@@ -45,6 +45,11 @@ class TestFetchWikipediaPassages:
 
         result = fetch_wikipedia_passages("test")
         assert result == []
+        self.mock_cache.set.assert_called_once_with(
+            "wiki:passages:test",
+            [],
+            ttl_seconds=300,
+        )
 
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_search_success_extract_error(self, mock_get: MagicMock) -> None:

@@ -87,6 +87,11 @@ class TestWikidataGraph:
 
         qid = self.graph.find_entity_id("Nonexistent")
         assert qid is None
+        self.mock_cache.set.assert_called_once_with(
+            "wd:entity:nonexistent",
+            None,
+            ttl_seconds=300,
+        )
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_find_entity_id_api_exception(self, mock_get: MagicMock) -> None:
@@ -94,6 +99,11 @@ class TestWikidataGraph:
 
         qid = self.graph.find_entity_id("Eiffel Tower")
         assert qid is None
+        self.mock_cache.set.assert_called_once_with(
+            "wd:entity:eiffel tower",
+            None,
+            ttl_seconds=300,
+        )
 
     def test_find_entity_id_sparql_success(self) -> None:
         self.mock_sparql.query.return_value.convert.return_value = {
@@ -221,6 +231,11 @@ class TestWikidataGraph:
 
         facts = self.graph.get_entity_facts("Q243")
         assert facts == []
+        self.mock_cache.set.assert_called_once_with(
+            "wd:facts:Q243",
+            [],
+            ttl_seconds=300,
+        )
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_get_entity_facts_exception(self, mock_get: MagicMock) -> None:
@@ -228,6 +243,11 @@ class TestWikidataGraph:
 
         facts = self.graph.get_entity_facts("Q243")
         assert facts == []
+        self.mock_cache.set.assert_called_once_with(
+            "wd:facts:Q243",
+            [],
+            ttl_seconds=300,
+        )
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_get_entity_facts_skip_non_value_snak(self, mock_get: MagicMock) -> None:
@@ -493,6 +513,11 @@ class TestWikidataGraph:
 
         qid = self.graph.find_entity_id("Eiffel Tower")
         assert qid is None
+        self.mock_cache.set.assert_called_once_with(
+            "wd:entity:eiffel tower",
+            None,
+            ttl_seconds=300,
+        )
 
     def test_run_query_retry_then_exception(self) -> None:
         self.mock_sparql.setQuery.reset_mock()

@@ -3,7 +3,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-import bm25s  # type: ignore[import-untyped]
+import bm25s
 import requests
 
 from watson_lite.core.cache import get_cache, is_cache_miss
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
 CHUNK_SIZE = 200
+_NEGATIVE_CACHE_TTL_SECONDS = 300
 WIKI_HEADERS = {
     "User-Agent": "WatsonLite/1.0 (educational project; clavijodario@gmail.com)"
 }
@@ -44,6 +45,7 @@ def fetch_wikipedia_passages(
         results = resp.json().get("query", {}).get("search", [])
     except Exception as e:
         logger.warning("Wikipedia search error: %s", e)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
     def _fetch_article(title: str) -> list[Passage]:

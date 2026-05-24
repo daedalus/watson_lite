@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
+_NEGATIVE_CACHE_TTL_SECONDS = 300
 
 # Static mapping of the most frequently encountered Wikidata property IDs to
 # their English labels.  Unknown PIDs fall back to the raw ID string.
@@ -117,14 +118,18 @@ class WikidataGraph:
                 qid = self._find_entity_id_sparql(entity_name)
                 if qid:
                     cache.set(cache_key, qid)
+                else:
+                    cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
                 return qid
             data = resp.json()
             if data.get("search"):
                 qid = str(data["search"][0]["id"])
                 cache.set(cache_key, qid)
                 return qid
+            cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         except Exception as e:
             logger.warning("Entity search error: %s", e)
+            cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return None
 
     def _find_entity_id_sparql(self, entity_name: str) -> str | None:
@@ -178,7 +183,7 @@ class WikidataGraph:
             return {}
 
     def _parse_claims_to_facts(
-        self, qid: str, claims: dict, max_facts: int
+        self, qid: str, claims: dict[str, Any], max_facts: int
     ) -> tuple[list[EntityFact], set[str]]:
         facts: list[EntityFact] = []
         seen: set[str] = set()
@@ -222,6 +227,7 @@ class WikidataGraph:
             resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
             if resp.status_code != 200:
                 logger.warning("EntityData request failed: HTTP %s", resp.status_code)
+                cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
                 return []
             data = resp.json()
             entity = data.get("entities", {}).get(qid, {})
@@ -237,6 +243,7 @@ class WikidataGraph:
             return facts
         except Exception as e:
             logger.warning("EntityData error: %s", e)
+            cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
             return []
 
     def get_related_entities(self, qid: str, max_related: int = 10) -> list[str]:
