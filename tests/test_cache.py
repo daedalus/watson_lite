@@ -1,7 +1,7 @@
 import os
 import tempfile
 
-from watson_lite.core.cache import Cache, _SENTINEL
+from watson_lite.core.cache import Cache, SENTINEL
 
 
 class TestCache:
@@ -18,7 +18,7 @@ class TestCache:
         assert self.cache.get("nonexistent") is None
 
     def test_get_or_sentinel_miss(self) -> None:
-        assert self.cache.get_or_sentinel("nonexistent") is _SENTINEL
+        assert self.cache.get_or_sentinel("nonexistent") is SENTINEL
 
     def test_set_and_get(self) -> None:
         self.cache.set("key1", "value1")
@@ -48,4 +48,4 @@ class TestCache:
         assert self.cache.get("null") is None
         # get_or_sentinel() distinguishes the two cases.
         assert self.cache.get_or_sentinel("null") is None
-        assert self.cache.get_or_sentinel("absent") is _SENTINEL
+        assert self.cache.get_or_sentinel("absent") is SENTINEL

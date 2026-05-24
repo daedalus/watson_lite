@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 import requests
 from SPARQLWrapper import JSON, SPARQLWrapper
 
-from watson_lite.core.cache import _SENTINEL, get_cache
+from watson_lite.core.cache import get_cache, is_cache_miss
 from watson_lite.core.models import EntityFact, GraphResult
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class WikidataGraph:
         cache = get_cache()
         cache_key = f"wd:entity:{entity_name.lower().strip()}"
         cached = cache.get_or_sentinel(cache_key)
-        if cached is not _SENTINEL:
+        if not is_cache_miss(cached):
             return str(cached) if cached is not None else None
 
         url = "https://www.wikidata.org/w/api.php"
@@ -99,7 +99,7 @@ class WikidataGraph:
         cache = get_cache()
         cache_key = f"wd:facts:{qid}"
         cached = cache.get_or_sentinel(cache_key)
-        if cached is not _SENTINEL:
+        if not is_cache_miss(cached):
             return [EntityFact(**f) for f in cached]  # type: ignore[arg-type]
 
         url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
@@ -181,4 +181,3 @@ class WikidataGraph:
 
     def enrich_all(self, entity_names: list[str]) -> list[GraphResult]:
         return [self.enrich(name) for name in entity_names]
-

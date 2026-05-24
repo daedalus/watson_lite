@@ -16,9 +16,7 @@ class TestVectorRetriever:
         self.mock_model.get_sentence_embedding_dimension.return_value = 384
         self.mock_st_cls.return_value = self.mock_model
 
-        self.faiss_patcher = patch(
-            "watson_lite.retrieval.vector_retriever.faiss"
-        )
+        self.faiss_patcher = patch("watson_lite.retrieval.vector_retriever.faiss")
         self.mock_faiss = self.faiss_patcher.start()
         self.mock_index = MagicMock()
         self.mock_index.ntotal = 2
@@ -44,9 +42,7 @@ class TestVectorRetriever:
             patch(
                 "watson_lite.retrieval.vector_retriever.SentenceTransformer"
             ) as mock_cls,
-            patch(
-                "watson_lite.retrieval.vector_retriever.faiss"
-            ) as mock_faiss,
+            patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,
         ):
             mock_m = MagicMock()
             mock_m.get_sentence_embedding_dimension.return_value = 768
@@ -63,9 +59,7 @@ class TestVectorRetriever:
                 url="http://example.com",
             ),
         ]
-        self.mock_model.encode.return_value = np.array(
-            [[0.1] * 384], dtype="float32"
-        )
+        self.mock_model.encode.return_value = np.array([[0.1] * 384], dtype="float32")
 
         self.retriever.index_passages(passages)
 
@@ -97,9 +91,7 @@ class TestVectorRetriever:
         self.retriever.passages = passages
         self.retriever.index = self.mock_index
 
-        self.mock_model.encode.return_value = np.array(
-            [[0.1] * 384], dtype="float32"
-        )
+        self.mock_model.encode.return_value = np.array([[0.1] * 384], dtype="float32")
         self.mock_index.search.return_value = (
             np.array([[0.95, 0.80]]),
             np.array([[0, 1]]),
@@ -124,9 +116,7 @@ class TestVectorRetriever:
         self.retriever.passages = passages
         self.retriever.index = self.mock_index
 
-        self.mock_model.encode.return_value = np.array(
-            [[0.1] * 384], dtype="float32"
-        )
+        self.mock_model.encode.return_value = np.array([[0.1] * 384], dtype="float32")
         self.mock_index.search.return_value = (
             np.array([[0.0]]),
             np.array([[-1]]),
@@ -147,9 +137,7 @@ class TestVectorRetriever:
         self.retriever.passages = passages
         self.retriever.index = self.mock_index
 
-        self.mock_model.encode.return_value = np.array(
-            [[0.1] * 384], dtype="float32"
-        )
+        self.mock_model.encode.return_value = np.array([[0.1] * 384], dtype="float32")
         expected = (
             np.array([[0.9, 0.8, 0.7]]),
             np.array([[0, 1, 2]]),

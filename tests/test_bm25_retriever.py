@@ -10,9 +10,7 @@ from watson_lite.retrieval.bm25_retriever import (
 
 class TestFetchWikipediaPassages:
     def setup_method(self) -> None:
-        self.cache_patcher = patch(
-            "watson_lite.retrieval.bm25_retriever.get_cache"
-        )
+        self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
         self.mock_get_cache = self.cache_patcher.start()
         self.mock_cache = MagicMock()
         self.mock_cache.get.return_value = None
@@ -48,11 +46,7 @@ class TestFetchWikipediaPassages:
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_search_success_extract_error(self, mock_get: MagicMock) -> None:
         search_resp = MagicMock()
-        search_resp.json.return_value = {
-            "query": {
-                "search": [{"title": "Test Page"}]
-            }
-        }
+        search_resp.json.return_value = {"query": {"search": [{"title": "Test Page"}]}}
 
         def side_effect(url, **kwargs):
             if "list=search" in str(kwargs.get("params", {})):
@@ -78,21 +72,11 @@ class TestFetchWikipediaPassages:
     def test_full_success(self, mock_get: MagicMock) -> None:
         search_resp = MagicMock()
         search_resp.json.return_value = {
-            "query": {
-                "search": [{"title": "Test Article"}]
-            }
+            "query": {"search": [{"title": "Test Article"}]}
         }
         extract_resp = MagicMock()
         extract_resp.json.return_value = {
-            "query": {
-                "pages": {
-                    "1": {
-                        "extract": (
-                            "word " * 300
-                        )
-                    }
-                }
-            }
+            "query": {"pages": {"1": {"extract": ("word " * 300)}}}
         }
         mock_get.side_effect = [search_resp, extract_resp]
 
@@ -103,21 +87,9 @@ class TestFetchWikipediaPassages:
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_extract_skips_empty_text(self, mock_get: MagicMock) -> None:
         search_resp = MagicMock()
-        search_resp.json.return_value = {
-            "query": {
-                "search": [{"title": "Empty"}]
-            }
-        }
+        search_resp.json.return_value = {"query": {"search": [{"title": "Empty"}]}}
         extract_resp = MagicMock()
-        extract_resp.json.return_value = {
-            "query": {
-                "pages": {
-                    "1": {
-                        "extract": ""
-                    }
-                }
-            }
-        }
+        extract_resp.json.return_value = {"query": {"pages": {"1": {"extract": ""}}}}
         mock_get.side_effect = [search_resp, extract_resp]
 
         result = fetch_wikipedia_passages("test")
@@ -126,20 +98,10 @@ class TestFetchWikipediaPassages:
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_extract_skips_short_chunk(self, mock_get: MagicMock) -> None:
         search_resp = MagicMock()
-        search_resp.json.return_value = {
-            "query": {
-                "search": [{"title": "Short"}]
-            }
-        }
+        search_resp.json.return_value = {"query": {"search": [{"title": "Short"}]}}
         extract_resp = MagicMock()
         extract_resp.json.return_value = {
-            "query": {
-                "pages": {
-                    "1": {
-                        "extract": "hello world"
-                    }
-                }
-            }
+            "query": {"pages": {"1": {"extract": "hello world"}}}
         }
         mock_get.side_effect = [search_resp, extract_resp]
 
@@ -149,17 +111,13 @@ class TestFetchWikipediaPassages:
 
 class TestBM25Retriever:
     def setup_method(self) -> None:
-        self.cache_patcher = patch(
-            "watson_lite.retrieval.bm25_retriever.get_cache"
-        )
+        self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
         self.mock_get_cache = self.cache_patcher.start()
         self.mock_cache = MagicMock()
         self.mock_cache.get.return_value = None
         self.mock_get_cache.return_value = self.mock_cache
 
-        self.bm25s_patcher = patch(
-            "watson_lite.retrieval.bm25_retriever.bm25s"
-        )
+        self.bm25s_patcher = patch("watson_lite.retrieval.bm25_retriever.bm25s")
         self.mock_bm25s = self.bm25s_patcher.start()
         self.mock_bm25s.tokenize.return_value = "tokenized_corpus"
         self.mock_retriever_instance = MagicMock()
@@ -189,12 +147,10 @@ class TestBM25Retriever:
         assert len(self.retriever.passages) == 2
         self.mock_bm25s.tokenize.assert_called_once()
         self.mock_bm25_cls.assert_called_once()
-        self.mock_retriever_instance.index.assert_called_once_with(
-            "tokenized_corpus"
-        )
+        self.mock_retriever_instance.index.assert_called_once_with("tokenized_corpus")
 
     def test_retrieve_empty(self) -> None:
-        result = self.retriever. retrieve("test")
+        result = self.retriever.retrieve("test")
         assert result == []
 
     def test_retrieve_with_results(self) -> None:

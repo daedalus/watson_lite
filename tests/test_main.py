@@ -19,9 +19,7 @@ class TestMain:
 
             assert result == 0
             mock_wl_cls.assert_called_once()
-            mock_wl.answer.assert_called_once_with(
-                "What is Python?", verbose=True
-            )
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
 
     def test_main_no_argv_interactive_quit(self) -> None:
         with (
@@ -48,9 +46,7 @@ class TestMain:
             result = main()
 
             assert result == 0
-            mock_wl.answer.assert_called_once_with(
-                "What is Python?", verbose=True
-            )
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
 
     def test_main_interactive_empty_input(self) -> None:
         with (

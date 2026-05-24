@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from watson_lite.core.cache import _SENTINEL
+from watson_lite.core.cache import SENTINEL
 from watson_lite.core.models import EntityFact, GraphResult
 from watson_lite.graph.wikidata import WikidataGraph
 
@@ -17,7 +17,7 @@ class TestWikidataGraph:
         self.mock_get_cache = self.cache_patcher.start()
         self.mock_cache = MagicMock()
         # Default: every key is a cache miss.
-        self.mock_cache.get_or_sentinel.return_value = _SENTINEL
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
 
         self.graph = WikidataGraph()
@@ -49,9 +49,7 @@ class TestWikidataGraph:
 
         qid = self.graph.find_entity_id("Eiffel Tower")
         assert qid == "Q243"
-        self.mock_cache.set.assert_called_once_with(
-            "wd:entity:eiffel tower", "Q243"
-        )
+        self.mock_cache.set.assert_called_once_with("wd:entity:eiffel tower", "Q243")
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_find_entity_id_429_fallback_sparql_success(
@@ -60,13 +58,7 @@ class TestWikidataGraph:
         mock_get.return_value.status_code = 429
         self.mock_sparql.query.return_value.convert.return_value = {
             "results": {
-                "bindings": [
-                    {
-                        "item": {
-                            "value": "http://www.wikidata.org/entity/Q243"
-                        }
-                    }
-                ]
+                "bindings": [{"item": {"value": "http://www.wikidata.org/entity/Q243"}}]
             }
         }
 
@@ -86,9 +78,7 @@ class TestWikidataGraph:
         assert qid is None
 
     @patch("watson_lite.graph.wikidata.requests.get")
-    def test_find_entity_id_api_no_search_results(
-        self, mock_get: MagicMock
-    ) -> None:
+    def test_find_entity_id_api_no_search_results(self, mock_get: MagicMock) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"search": []}
@@ -107,13 +97,7 @@ class TestWikidataGraph:
     def test_find_entity_id_sparql_success(self) -> None:
         self.mock_sparql.query.return_value.convert.return_value = {
             "results": {
-                "bindings": [
-                    {
-                        "item": {
-                            "value": "http://www.wikidata.org/entity/Q243"
-                        }
-                    }
-                ]
+                "bindings": [{"item": {"value": "http://www.wikidata.org/entity/Q243"}}]
             }
         }
 
@@ -202,9 +186,7 @@ class TestWikidataGraph:
         assert facts == []
 
     @patch("watson_lite.graph.wikidata.requests.get")
-    def test_get_entity_facts_skip_non_value_snak(
-        self, mock_get: MagicMock
-    ) -> None:
+    def test_get_entity_facts_skip_non_value_snak(self, mock_get: MagicMock) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -259,9 +241,7 @@ class TestWikidataGraph:
         assert facts[0].value_type == "wikibase-entityid"
 
     @patch("watson_lite.graph.wikidata.requests.get")
-    def test_get_entity_facts_dedup_and_max_facts(
-        self, mock_get: MagicMock
-    ) -> None:
+    def test_get_entity_facts_dedup_and_max_facts(self, mock_get: MagicMock) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -303,9 +283,7 @@ class TestWikidataGraph:
     def test_get_entity_facts_empty_claims(self, mock_get: MagicMock) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "entities": {"Q243": {"claims": {}}}
-        }
+        mock_resp.json.return_value = {"entities": {"Q243": {"claims": {}}}}
         mock_get.return_value = mock_resp
 
         facts = self.graph.get_entity_facts("Q243")
@@ -313,8 +291,7 @@ class TestWikidataGraph:
 
     def test_clean_entity_name(self) -> None:
         assert (
-            WikidataGraph._clean_entity_name("  The Eiffel Tower  ")
-            == "Eiffel Tower"
+            WikidataGraph._clean_entity_name("  The Eiffel Tower  ") == "Eiffel Tower"
         )
         assert WikidataGraph._clean_entity_name("A Apple") == "Apple"
         assert WikidataGraph._clean_entity_name("An Orange") == "Orange"
@@ -351,26 +328,20 @@ class TestWikidataGraph:
             mock_find.assert_called_once_with("Eiffel Tower")
 
     def test_enrich_cleaned_name_with_article(self) -> None:
-        with patch.object(
-            self.graph, "find_entity_id", return_value="Q243"
-        ):
+        with patch.object(self.graph, "find_entity_id", return_value="Q243"):
             result = self.graph.enrich("The Eiffel Tower")
             assert result.entity_name == "The Eiffel Tower"
             assert result.wikidata_id == "Q243"
 
     def test_enrich_no_qid(self) -> None:
-        with patch.object(
-            self.graph, "find_entity_id", return_value=None
-        ) as mock_find:
+        with patch.object(self.graph, "find_entity_id", return_value=None) as mock_find:
             result = self.graph.enrich("Nowhere")
             assert result.entity_name == "Nowhere"
             assert result.wikidata_id is None
             assert result.facts == []
 
     def test_enrich_no_qid_cleaned_empty(self) -> None:
-        with patch.object(
-            self.graph, "find_entity_id", return_value=None
-        ):
+        with patch.object(self.graph, "find_entity_id", return_value=None):
             result = self.graph.enrich("The")
             assert result.entity_name == "The"
             assert result.wikidata_id is None
@@ -378,9 +349,11 @@ class TestWikidataGraph:
     def test_enrich_all(self) -> None:
         with (
             patch.object(
-                self.graph, "enrich", side_effect=lambda n: GraphResult(
+                self.graph,
+                "enrich",
+                side_effect=lambda n: GraphResult(
                     entity_name=n, wikidata_id=f"Q{n[:2]}"
-                )
+                ),
             ),
         ):
             results = self.graph.enrich_all(["Paris", "London"])
@@ -415,7 +388,7 @@ class TestWikidataGraph:
     def test_find_entity_id_api_cache_hit_on_no_search(
         self, mock_get: MagicMock
     ) -> None:
-        self.mock_cache.get_or_sentinel.return_value = _SENTINEL
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {}
@@ -426,9 +399,7 @@ class TestWikidataGraph:
 
     def test_run_query_retry_then_exception(self) -> None:
         self.mock_sparql.setQuery.reset_mock()
-        http_error_429 = __import__(
-            "urllib.error", fromlist=["HTTPError"]
-        ).HTTPError(
+        http_error_429 = __import__("urllib.error", fromlist=["HTTPError"]).HTTPError(
             "url", 429, "Too Many", {}, None
         )
 

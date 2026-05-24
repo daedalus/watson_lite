@@ -46,9 +46,7 @@ class TestRRFFusion:
 
 class TestCrossEncoderReranker:
     def setup_method(self) -> None:
-        self.ce_patcher = patch(
-            "watson_lite.ranking.ranker.CrossEncoder"
-        )
+        self.ce_patcher = patch("watson_lite.ranking.ranker.CrossEncoder")
         self.mock_ce_cls = self.ce_patcher.start()
         self.mock_model = MagicMock()
         self.mock_ce_cls.return_value = self.mock_model
@@ -128,9 +126,7 @@ class TestCrossEncoderReranker:
 
 class TestRanker:
     def setup_method(self) -> None:
-        self.ce_patcher = patch(
-            "watson_lite.ranking.ranker.CrossEncoder"
-        )
+        self.ce_patcher = patch("watson_lite.ranking.ranker.CrossEncoder")
         self.mock_ce_cls = self.ce_patcher.start()
         self.mock_model = MagicMock()
         self.mock_ce_cls.return_value = self.mock_model
