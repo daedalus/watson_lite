@@ -1,5 +1,6 @@
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.kpis import BenchmarkLabel, evaluate_kpis
+import pytest
 
 
 def _answer(
@@ -71,7 +72,7 @@ class TestKPIEvaluation:
         assert report.average_passages_extracted == 2.5
         assert report.latency_p50_s > 0
         assert report.latency_p95_s > 0
-        assert report.stage_latency_mean_s["nlp"] == 0.15
+        assert report.stage_latency_mean_s["nlp"] == pytest.approx(0.15)
 
     def test_labeled_kpis(self) -> None:
         answers = [

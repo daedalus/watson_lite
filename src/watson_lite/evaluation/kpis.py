@@ -4,8 +4,10 @@ import re
 import statistics
 import string
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from watson_lite.core.models import FinalAnswer
+if TYPE_CHECKING:
+    from watson_lite.core.models import FinalAnswer
 
 _FALLBACK_ANSWERS = {
     "no answer found",
@@ -69,7 +71,10 @@ def _exact_match(prediction: str, reference: str) -> float:
 
 
 def _is_success(answer: FinalAnswer) -> bool:
-    return answer.confidence > 0.0 and answer.answer.lower().strip() not in _FALLBACK_ANSWERS
+    return (
+        answer.confidence > 0.0
+        and answer.answer.lower().strip() not in _FALLBACK_ANSWERS
+    )
 
 
 def _is_failure(answer: FinalAnswer) -> bool:
@@ -114,6 +119,61 @@ def _recall_hit(retrieved: list[str], evidence_passages: list[str], top_k: int) 
     return False
 
 
+def _latency_percentiles(answers: list[FinalAnswer]) -> tuple[float, float]:
+    latencies = [
+        float(a.diagnostics.total_latency_s)
+        for a in answers
+        if a.diagnostics is not None and a.diagnostics.total_latency_s >= 0
+    ]
+    if not latencies:
+        return 0.0, 0.0
+    if len(latencies) == 1:
+        return latencies[0], latencies[0]
+    p50 = statistics.quantiles(latencies, n=100, method="inclusive")[49]
+    p95 = statistics.quantiles(latencies, n=100, method="inclusive")[94]
+    return p50, p95
+
+
+def _evaluate_labeled(
+    answers: list[FinalAnswer],
+    labels: list[BenchmarkLabel],
+    recall_k: int,
+    calibration_bins: int,
+) -> tuple[float, float, float, float, float]:
+    em_values: list[float] = []
+    f1_values: list[float] = []
+    correctness: list[bool] = []
+    confidence_scores: list[float] = []
+    recall_hits = 0
+    recall_total = 0
+
+    for answer, label in zip(answers, labels):
+        em = max(_exact_match(answer.answer, ref) for ref in label.answers)
+        f1 = max(_token_f1(answer.answer, ref) for ref in label.answers)
+        em_values.append(em)
+        f1_values.append(f1)
+        correctness.append(em > 0)
+        confidence_scores.append(float(answer.confidence))
+
+        diagnostics = answer.diagnostics
+        if diagnostics is not None and label.evidence_passages:
+            recall_total += 1
+            if _recall_hit(
+                diagnostics.top_retrieved_passages,
+                label.evidence_passages,
+                top_k=recall_k,
+            ):
+                recall_hits += 1
+
+    total = len(answers)
+    accuracy_at_1 = sum(1.0 for ok in correctness if ok) / total
+    em_score = sum(em_values) / total
+    f1_score = sum(f1_values) / total
+    ece = _ece(confidence_scores, correctness, bins=calibration_bins)
+    recall = (recall_hits / recall_total) if recall_total else 0.0
+    return accuracy_at_1, em_score, f1_score, ece, recall
+
+
 def evaluate_kpis(
     answers: list[FinalAnswer],
     labels: list[BenchmarkLabel] | None = None,
@@ -134,28 +194,16 @@ def evaluate_kpis(
         if a.url.startswith(("http://", "https://")) and len(a.supporting_passages) > 0
     )
     graph = sum(
-        1 for a in answers if float(a.confidence_breakdown.get("graph_corroboration", 0)) > 0
+        1
+        for a in answers
+        if float(a.confidence_breakdown.get("graph_corroboration", 0)) > 0
     )
     type_match = sum(
         1 for a in answers if float(a.confidence_breakdown.get("type_coercion", 0)) > 0
     )
     failures = sum(1 for a in answers if _is_failure(a))
 
-    latencies = [
-        float(a.diagnostics.total_latency_s)
-        for a in answers
-        if a.diagnostics is not None and a.diagnostics.total_latency_s >= 0
-    ]
-    if latencies:
-        if len(latencies) == 1:
-            latency_p50 = latencies[0]
-            latency_p95 = latencies[0]
-        else:
-            latency_p50 = statistics.quantiles(latencies, n=100, method="inclusive")[49]
-            latency_p95 = statistics.quantiles(latencies, n=100, method="inclusive")[94]
-    else:
-        latency_p50 = 0.0
-        latency_p95 = 0.0
+    latency_p50, latency_p95 = _latency_percentiles(answers)
 
     stage_series: dict[str, list[float]] = {}
     for answer in answers:
@@ -169,7 +217,9 @@ def evaluate_kpis(
         if values
     }
 
-    cache_hits = sum(a.diagnostics.cache_hits for a in answers if a.diagnostics is not None)
+    cache_hits = sum(
+        a.diagnostics.cache_hits for a in answers if a.diagnostics is not None
+    )
     cache_misses = sum(
         a.diagnostics.cache_misses for a in answers if a.diagnostics is not None
     )
@@ -177,15 +227,25 @@ def evaluate_kpis(
     cache_hit_rate = (cache_hits / cache_total) if cache_total else 0.0
 
     avg_fetched = (
-        sum(a.diagnostics.passages_fetched for a in answers if a.diagnostics is not None)
+        sum(
+            a.diagnostics.passages_fetched for a in answers if a.diagnostics is not None
+        )
         / total
     )
     avg_reranked = (
-        sum(a.diagnostics.passages_reranked for a in answers if a.diagnostics is not None)
+        sum(
+            a.diagnostics.passages_reranked
+            for a in answers
+            if a.diagnostics is not None
+        )
         / total
     )
     avg_extracted = (
-        sum(a.diagnostics.passages_extracted for a in answers if a.diagnostics is not None)
+        sum(
+            a.diagnostics.passages_extracted
+            for a in answers
+            if a.diagnostics is not None
+        )
         / total
     )
 
@@ -196,36 +256,9 @@ def evaluate_kpis(
     recall: float | None = None
 
     if labels is not None:
-        em_values: list[float] = []
-        f1_values: list[float] = []
-        correctness: list[bool] = []
-        confidence_scores: list[float] = []
-        recall_hits = 0
-        recall_total = 0
-
-        for answer, label in zip(answers, labels):
-            em = max(_exact_match(answer.answer, ref) for ref in label.answers)
-            f1 = max(_token_f1(answer.answer, ref) for ref in label.answers)
-            em_values.append(em)
-            f1_values.append(f1)
-            correctness.append(em > 0)
-            confidence_scores.append(float(answer.confidence))
-
-            diagnostics = answer.diagnostics
-            if diagnostics is not None and label.evidence_passages:
-                recall_total += 1
-                if _recall_hit(
-                    diagnostics.top_retrieved_passages,
-                    label.evidence_passages,
-                    top_k=recall_k,
-                ):
-                    recall_hits += 1
-
-        accuracy_at_1 = sum(1.0 for ok in correctness if ok) / total
-        em_score = sum(em_values) / total
-        f1_score = sum(f1_values) / total
-        ece = _ece(confidence_scores, correctness, bins=calibration_bins)
-        recall = (recall_hits / recall_total) if recall_total else 0.0
+        accuracy_at_1, em_score, f1_score, ece, recall = _evaluate_labeled(
+            answers, labels, recall_k=recall_k, calibration_bins=calibration_bins
+        )
 
     return KPIReport(
         total_questions=total,

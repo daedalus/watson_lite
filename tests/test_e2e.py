@@ -33,7 +33,11 @@ _PARIS_PASSAGE = (
 
 def _make_passages(*texts: str) -> list[Passage]:
     return [
-        Passage(text=t, source=f"Article {i}", url=f"https://en.wikipedia.org/wiki/Article_{i}")
+        Passage(
+            text=t,
+            source=f"Article {i}",
+            url=f"https://en.wikipedia.org/wiki/Article_{i}",
+        )
         for i, t in enumerate(texts)
     ]
 
@@ -41,6 +45,7 @@ def _make_passages(*texts: str) -> list[Passage]:
 # ---------------------------------------------------------------------------
 # Fixture: full pipeline with mocked I/O
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def patched_pipeline():
@@ -124,6 +129,7 @@ def patched_pipeline():
         # --- Wikidata mock (cache miss, no facts) ---
         mock_wd_cache_obj = MagicMock()
         from watson_lite.core.cache import SENTINEL
+
         mock_wd_cache_obj.get_or_sentinel.return_value = SENTINEL
         mock_wd_cache.return_value = mock_wd_cache_obj
         mock_wd_resp = MagicMock()
@@ -138,6 +144,7 @@ def patched_pipeline():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestE2EPipeline:
     def test_answer_returns_final_answer(self, patched_pipeline) -> None:

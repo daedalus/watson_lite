@@ -6,9 +6,6 @@ from typing import TYPE_CHECKING, Literal, overload
 
 from transformers import pipeline
 
-if TYPE_CHECKING:
-    from transformers.pipelines.base import Pipeline
-
 from watson_lite.core.models import (
     AnswerCandidate,
     FinalAnswer,
@@ -16,6 +13,9 @@ from watson_lite.core.models import (
     RankedPassage,
 )
 from watson_lite.scoring.type_coercion import score_type_coercion
+
+if TYPE_CHECKING:
+    from transformers.pipelines.base import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def _question_type_bonus(span: str, question_type: str) -> float:
 class ExtractiveReader:
     def __init__(self, model_name: str = EXTRACTIVE_MODEL) -> None:
         logger.debug("Loading extractive QA model: %s", model_name)
-        self.qa: Pipeline = pipeline(  # type: ignore[call-overload]
+        self.qa: Pipeline = pipeline(
             "question-answering",
             model=model_name,
             tokenizer=model_name,
@@ -56,7 +56,8 @@ class ExtractiveReader:
         passages: list[RankedPassage],
         top_k: int = 5,
         return_stats: Literal[False] = False,
-    ) -> list[AnswerCandidate]: ...
+    ) -> list[AnswerCandidate]:
+        pass
 
     @overload
     def extract(
@@ -65,7 +66,8 @@ class ExtractiveReader:
         passages: list[RankedPassage],
         top_k: int = 5,
         return_stats: Literal[True] = True,
-    ) -> tuple[list[AnswerCandidate], int]: ...
+    ) -> tuple[list[AnswerCandidate], int]:
+        pass
 
     def extract(
         self,
@@ -79,7 +81,7 @@ class ExtractiveReader:
 
         for rp in passages[:top_k]:
             try:
-                result = self.qa(  # type: ignore[call-arg]
+                result = self.qa(
                     question=question,
                     context=rp.passage.text,
                     max_answer_len=100,

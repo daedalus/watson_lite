@@ -3,7 +3,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from watson_lite.core.cache import get_cache_metrics_snapshot
+from watson_lite.core.cache import CacheMetrics, get_cache_metrics_snapshot
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer, GraphResult, Passage
 from watson_lite.core.nlp import NLPProcessor
@@ -77,30 +77,26 @@ class WatsonLite:
 
     @staticmethod
     def _cache_metrics_delta(
-        before: dict[str, int | dict[str, int]],
-        after: dict[str, int | dict[str, int]],
+        before: CacheMetrics,
+        after: CacheMetrics,
     ) -> tuple[int, int, dict[str, int], dict[str, int]]:
-        before_hits = int(before.get("hits", 0))
-        after_hits = int(after.get("hits", 0))
-        before_misses = int(before.get("misses", 0))
-        after_misses = int(after.get("misses", 0))
+        before_hits = before["hits"]
+        after_hits = after["hits"]
+        before_misses = before["misses"]
+        after_misses = after["misses"]
 
-        before_hits_ns = before.get("hits_by_namespace", {})
-        after_hits_ns = after.get("hits_by_namespace", {})
-        before_misses_ns = before.get("misses_by_namespace", {})
-        after_misses_ns = after.get("misses_by_namespace", {})
+        before_hits_ns = before["hits_by_namespace"]
+        after_hits_ns = after["hits_by_namespace"]
+        before_misses_ns = before["misses_by_namespace"]
+        after_misses_ns = after["misses_by_namespace"]
 
         hits_by_ns: dict[str, int] = {}
         misses_by_ns: dict[str, int] = {}
 
-        if isinstance(after_hits_ns, dict) and isinstance(before_hits_ns, dict):
-            for key, value in after_hits_ns.items():
-                hits_by_ns[str(key)] = int(value) - int(before_hits_ns.get(key, 0))
-        if isinstance(after_misses_ns, dict) and isinstance(before_misses_ns, dict):
-            for key, value in after_misses_ns.items():
-                misses_by_ns[str(key)] = int(value) - int(
-                    before_misses_ns.get(key, 0)
-                )
+        for key, value in after_hits_ns.items():
+            hits_by_ns[str(key)] = int(value) - int(before_hits_ns.get(key, 0))
+        for key, value in after_misses_ns.items():
+            misses_by_ns[str(key)] = int(value) - int(before_misses_ns.get(key, 0))
 
         return (
             max(0, after_hits - before_hits),
@@ -116,7 +112,9 @@ class WatsonLite:
             "Could not retrieve relevant passages.",
         }
 
-    def answer(self, question: str, verbose: bool = True) -> FinalAnswer:
+    def answer(  # pylint: disable=too-many-statements
+        self, question: str, verbose: bool = True
+    ) -> FinalAnswer:
         if not question:
             raise ValueError("question must not be empty")
 
@@ -208,9 +206,13 @@ class WatsonLite:
         all_candidates = []
         extraction_errors = 0
         for sub_q in parsed.sub_questions:
-            candidates, errors = self.reader.extract(
+            extraction_result = self.reader.extract(
                 sub_q, ranked, top_k=5, return_stats=True
             )
+            if isinstance(extraction_result, tuple):
+                candidates, errors = extraction_result
+            else:
+                candidates, errors = extraction_result, 0
             all_candidates.extend(candidates)
             extraction_errors += errors
 
