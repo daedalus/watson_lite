@@ -107,12 +107,15 @@ class ExtractiveReader:
 
 
 class ConfidenceScorer:
-    def score(
+    def score(  # pylint: disable=too-many-arguments
         self,
         candidates: list[AnswerCandidate],
         graph_results: list[GraphResult],
         question_type: str,
         lat_qids: list[str] | None = None,
+        *,
+        enable_question_type_bonus: bool = True,
+        enable_type_coercion: bool = True,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -146,9 +149,17 @@ class ConfidenceScorer:
 
         rank_signal = max(0.0, 1.0 - (best.rank - 1) * 0.1)
 
-        qt_bonus = _question_type_bonus(best.span, question_type)
+        qt_bonus = (
+            _question_type_bonus(best.span, question_type)
+            if enable_question_type_bonus
+            else 0.0
+        )
 
-        type_signal = score_type_coercion(candidates, lat_qids or [])
+        type_signal = (
+            score_type_coercion(candidates, lat_qids or [])
+            if enable_type_coercion
+            else 0.0
+        )
 
         confidence = (
             0.45 * extraction_conf

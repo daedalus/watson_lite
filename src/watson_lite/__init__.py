@@ -1,5 +1,6 @@
 __version__ = "0.1.1"
 
+from watson_lite.core.config import FeatureConfig
 from watson_lite.core.models import (
     AnswerCandidate,
     AnswerDiagnostics,
@@ -22,4 +23,5 @@ __all__ = [
     "EntityFact",
     "GraphResult",
     "ParsedQuestion",
+    "FeatureConfig",
 ]

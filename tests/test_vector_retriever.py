@@ -1,6 +1,7 @@
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
 
 from watson_lite.core.models import Passage
 from watson_lite.retrieval.vector_retriever import VectorRetriever

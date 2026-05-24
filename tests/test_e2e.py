@@ -7,13 +7,13 @@ data flows correctly through the full pipeline without relying on network
 access or large downloaded models.
 """
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
 
 from watson_lite.core.models import FinalAnswer, Passage
 from watson_lite.pipeline import WatsonLite
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
