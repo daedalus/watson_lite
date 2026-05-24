@@ -1571,6 +1571,9 @@ class TestE2EFailures:
         from watson_lite.pipeline import WatsonLite
 
         wl = object.__new__(WatsonLite)
+        from watson_lite.core.config import FeatureConfig
+
+        wl.config = FeatureConfig.baseline()
         wl.nlp = MagicMock()
         wl.bm25 = MagicMock()
         wl.vector = MagicMock()
@@ -1578,8 +1581,17 @@ class TestE2EFailures:
         wl.ranker = MagicMock()
         wl.reader = MagicMock()
         wl.scorer = MagicMock()
+        wl.dataset_query_engine = MagicMock()
         wl._last_passage_hash = None
         wl.logger = MagicMock()
+        test_passages = [
+            Passage(
+                "Eiffel Tower was designed by Gustave Eiffel.", "Eiffel Tower", "url"
+            )
+        ]
+        wl.dataset_query_engine.query.return_value = test_passages
+        wl.bm25.retrieve.return_value = test_passages
+        wl.vector.retrieve.return_value = test_passages
 
         wl.nlp.process.return_value = MagicMock(
             sub_questions=["Who designed the Eiffel Tower?"],
@@ -1604,3 +1616,176 @@ class TestE2EFailures:
         ]
         result = wl.answer("Who designed the Eiffel Tower?", verbose=False)
         assert result.answer == "Gustave Eiffel"
+
+
+# ---------------------------------------------------------------------------
+# Term match scoring — IDF-weighted passage term overlap
+# ---------------------------------------------------------------------------
+
+
+class TestTermMatch:
+    def test_perfect_match_returns_high_score(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        passages = [
+            RankedPassage(
+                passage=Passage(
+                    "Gustave Eiffel designed the Eiffel Tower",
+                    "src",
+                    "url",
+                ),
+                rank=1,
+            ),
+        ]
+        score = score_term_match("Gustave Eiffel designed the Eiffel Tower", passages)
+        assert score == pytest.approx(1.0)
+
+    def test_no_overlap_returns_zero(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        passages = [
+            RankedPassage(
+                passage=Passage(
+                    "The weather is nice today",
+                    "src",
+                    "url",
+                ),
+                rank=1,
+            ),
+        ]
+        score = score_term_match("Gustave Eiffel designed the Eiffel Tower", passages)
+        assert score == pytest.approx(0.0)
+
+    def test_partial_match(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        passages = [
+            RankedPassage(
+                passage=Passage(
+                    "Paris is the capital of France",
+                    "src",
+                    "url",
+                ),
+                rank=1,
+            ),
+        ]
+        score = score_term_match("Eiffel Tower Paris", passages)
+        assert 0.0 < score < 1.0
+
+    def test_empty_passages_returns_zero(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        assert score_term_match("test", []) == 0.0
+
+    def test_empty_question_returns_zero(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        passages = [
+            RankedPassage(passage=Passage("hello world", "src", "url"), rank=1),
+        ]
+        assert score_term_match("", passages) == 0.0
+
+    def test_rare_terms_get_higher_weight(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        passages = [
+            RankedPassage(
+                passage=Passage("Gustave Eiffel built the tower", "src", "url"),
+                rank=1,
+            ),
+            RankedPassage(
+                passage=Passage("the tower is tall", "src", "url"),
+                rank=2,
+            ),
+        ]
+        score = score_term_match("Gustave Eiffel tower", passages)
+        assert score > 0.5
+
+    def test_selects_best_passage(self) -> None:
+        from watson_lite.scoring.term_match import score_term_match
+
+        passages = [
+            RankedPassage(
+                passage=Passage("the and of in a", "src", "url"),
+                rank=1,
+            ),
+            RankedPassage(
+                passage=Passage("Gustave Eiffel designed it", "src", "url"),
+                rank=2,
+            ),
+        ]
+        score = score_term_match("Gustave Eiffel", passages)
+        assert score > 0.5
+
+    def test_tokenization_handles_contractions(self) -> None:
+        from watson_lite.scoring.term_match import _tokenize
+
+        tokens = _tokenize("Don't forget")
+        assert "don" in tokens
+        assert "t" in tokens
+        assert "forget" in tokens
+
+    def test_tokenization_lowercases_and_filters_stops(self) -> None:
+        from watson_lite.scoring.term_match import _tokenize
+
+        tokens = _tokenize("Hello WORLD the and")
+        assert "hello" in tokens
+        assert "world" in tokens
+        assert "the" not in tokens
+        assert "and" not in tokens
+
+    def test_integrates_with_confidence_scorer(self) -> None:
+        scorer = ConfidenceScorer()
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage="Gustave Eiffel designed the Eiffel Tower",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        ranked_passages = [
+            RankedPassage(
+                passage=Passage(
+                    "Gustave Eiffel designed the Eiffel Tower",
+                    "s",
+                    "url",
+                ),
+                rank=1,
+            ),
+        ]
+        answer = scorer.score(
+            candidates,
+            [],
+            "who",
+            question="Who designed the Eiffel Tower?",
+            ranked_passages=ranked_passages,
+        )
+        assert answer.confidence_breakdown["term_match"] > 0
+
+    def test_disabled_via_flag(self) -> None:
+        scorer = ConfidenceScorer()
+        candidates = [
+            AnswerCandidate(
+                span="x",
+                source="s",
+                url="",
+                passage="x y z",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        ranked_passages = [
+            RankedPassage(passage=Passage("x y z", "s", "url"), rank=1),
+        ]
+        answer = scorer.score(
+            candidates,
+            [],
+            "what",
+            question="x y z",
+            ranked_passages=ranked_passages,
+            enable_term_match=False,
+        )
+        assert answer.confidence_breakdown["term_match"] == 0.0

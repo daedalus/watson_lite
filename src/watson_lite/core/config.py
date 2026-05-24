@@ -13,6 +13,7 @@ class FeatureConfig:
     cross_encoder_reranking: bool = True
     question_type_bonus: bool = True
     type_coercion: bool = True
+    term_match: bool = True
     dataset_sources: tuple[str, ...] = ("wikipedia",)
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
@@ -32,6 +33,7 @@ class FeatureConfig:
             cross_encoder_reranking=False,
             question_type_bonus=False,
             type_coercion=False,
+            term_match=False,
         )
 
     def with_feature(self, name: str, enabled: bool) -> FeatureConfig:
@@ -45,4 +47,5 @@ OPTIONAL_FEATURES = (
     "cross_encoder_reranking",
     "question_type_bonus",
     "type_coercion",
+    "term_match",
 )

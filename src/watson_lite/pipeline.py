@@ -271,8 +271,11 @@ class WatsonLite:
             graph_results,
             parsed.question_type,
             lat_qids=parsed.lat_qids,
+            question=question,
+            ranked_passages=ranked,
             enable_question_type_bonus=self.config.question_type_bonus,
             enable_type_coercion=self.config.type_coercion,
+            enable_term_match=self.config.term_match,
         )
         stage_latencies["scoring"] = round(time.perf_counter() - stage_t0, 4)
 

@@ -12,6 +12,7 @@ from watson_lite.core.models import (
     GraphResult,
     RankedPassage,
 )
+from watson_lite.scoring.term_match import score_term_match
 from watson_lite.scoring.type_coercion import score_type_coercion
 
 if TYPE_CHECKING:
@@ -114,8 +115,11 @@ class ConfidenceScorer:
         question_type: str,
         lat_qids: list[str] | None = None,
         *,
+        question: str = "",
+        ranked_passages: list[RankedPassage] | None = None,
         enable_question_type_bonus: bool = True,
         enable_type_coercion: bool = True,
+        enable_term_match: bool = True,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -161,13 +165,20 @@ class ConfidenceScorer:
             else 0.0
         )
 
+        term_match_signal = (
+            score_term_match(question, ranked_passages)
+            if enable_term_match and ranked_passages
+            else 0.0
+        )
+
         confidence = (
-            0.45 * extraction_conf
+            0.35 * extraction_conf
             + 0.15 * agreement
             + 0.15 * graph_signal
             + 0.10 * rank_signal
             + qt_bonus
             + 0.15 * type_signal
+            + 0.10 * term_match_signal
         )
         confidence = round(min(confidence, 1.0), 3)
 
@@ -185,5 +196,6 @@ class ConfidenceScorer:
                 "passage_rank_signal": round(rank_signal, 3),
                 "question_type_bonus": qt_bonus,
                 "type_coercion": type_signal,
+                "term_match": round(term_match_signal, 3),
             },
         )
