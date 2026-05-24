@@ -177,6 +177,21 @@ class TestE2EPipeline:
         ):
             assert key in result.confidence_breakdown, f"Missing key: {key}"
 
+    def test_answer_populates_diagnostics(self, patched_pipeline) -> None:
+        watson, _, _ = patched_pipeline
+        result = watson.answer("Who designed the Eiffel Tower?", verbose=False)
+        diagnostics = result.diagnostics
+        assert diagnostics is not None
+        assert diagnostics.total_latency_s >= 0.0
+        assert diagnostics.stage_latencies_s["nlp"] >= 0.0
+        assert diagnostics.stage_latencies_s["retrieval"] >= 0.0
+        assert diagnostics.stage_latencies_s["ranking"] >= 0.0
+        assert diagnostics.stage_latencies_s["extraction"] >= 0.0
+        assert diagnostics.stage_latencies_s["scoring"] >= 0.0
+        assert diagnostics.passages_fetched > 0
+        assert diagnostics.passages_reranked > 0
+        assert diagnostics.passages_extracted > 0
+
     def test_no_passages_returns_fallback(self, patched_pipeline) -> None:
         watson, mock_fetch, _ = patched_pipeline
         mock_fetch.return_value = []

@@ -4,6 +4,7 @@ import logging
 import pathlib
 import sqlite3
 import time
+from copy import deepcopy
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,37 @@ _DEFAULT_CACHE_DIR = pathlib.Path.home() / ".cache" / "watson_lite"
 # Sentinel used to distinguish a cached ``None`` value from a cache miss.
 SENTINEL = object()
 _SENTINEL = SENTINEL  # Backward-compat alias for internal imports.
+_cache_metrics: dict[str, int | dict[str, int]] = {
+    "hits": 0,
+    "misses": 0,
+    "hits_by_namespace": {},
+    "misses_by_namespace": {},
+}
+
+
+def _namespace_for_key(key: str) -> str:
+    prefix = key.split(":", 1)[0].strip().lower()
+    return prefix or "other"
+
+
+def _bump_metric(bucket: str, key: str) -> None:
+    namespace = _namespace_for_key(key)
+    metrics = _cache_metrics[bucket]
+    if isinstance(metrics, dict):
+        metrics[namespace] = metrics.get(namespace, 0) + 1
+
+
+def get_cache_metrics_snapshot() -> dict[str, int | dict[str, int]]:
+    """Return a deep copy of cache hit/miss counters for KPI reporting."""
+    return deepcopy(_cache_metrics)
+
+
+def reset_cache_metrics() -> None:
+    """Reset cache hit/miss counters used by KPI diagnostics."""
+    _cache_metrics["hits"] = 0
+    _cache_metrics["misses"] = 0
+    _cache_metrics["hits_by_namespace"] = {}
+    _cache_metrics["misses_by_namespace"] = {}
 
 
 def is_cache_miss(value: Any) -> bool:
@@ -77,7 +109,11 @@ class Cache:
             "SELECT value FROM cache WHERE key = ?", (key,)
         ).fetchone()
         if row:
+            _cache_metrics["hits"] = int(_cache_metrics["hits"]) + 1
+            _bump_metric("hits_by_namespace", key)
             return self._unwrap(row[0])
+        _cache_metrics["misses"] = int(_cache_metrics["misses"]) + 1
+        _bump_metric("misses_by_namespace", key)
         return SENTINEL
 
     def set(self, key: str, value: Any) -> None:  # noqa: ANN401

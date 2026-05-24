@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, overload
 
 from transformers import pipeline
 
@@ -49,10 +49,33 @@ class ExtractiveReader:
             device=-1,
         )
 
+    @overload
     def extract(
-        self, question: str, passages: list[RankedPassage], top_k: int = 5
-    ) -> list[AnswerCandidate]:
+        self,
+        question: str,
+        passages: list[RankedPassage],
+        top_k: int = 5,
+        return_stats: Literal[False] = False,
+    ) -> list[AnswerCandidate]: ...
+
+    @overload
+    def extract(
+        self,
+        question: str,
+        passages: list[RankedPassage],
+        top_k: int = 5,
+        return_stats: Literal[True] = True,
+    ) -> tuple[list[AnswerCandidate], int]: ...
+
+    def extract(
+        self,
+        question: str,
+        passages: list[RankedPassage],
+        top_k: int = 5,
+        return_stats: bool = False,
+    ) -> list[AnswerCandidate] | tuple[list[AnswerCandidate], int]:
         candidates = []
+        extraction_errors = 0
 
         for rp in passages[:top_k]:
             try:
@@ -73,8 +96,11 @@ class ExtractiveReader:
                 )
             except (ValueError, RuntimeError, KeyError) as e:
                 logger.warning("Skipped passage due to extraction error: %s", e)
+                extraction_errors += 1
 
         candidates.sort(key=lambda c: c.extraction_score, reverse=True)
+        if return_stats:
+            return candidates, extraction_errors
         return candidates
 
 

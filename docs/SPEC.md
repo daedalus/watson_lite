@@ -183,6 +183,23 @@ class FinalAnswer:
     supporting_passages: list[str]
     graph_facts: list[str]
     confidence_breakdown: dict
+    diagnostics: AnswerDiagnostics | None
+
+@dataclass
+class AnswerDiagnostics:
+    total_latency_s: float
+    stage_latencies_s: dict[str, float]
+    passages_fetched: int
+    passages_reranked: int
+    passages_extracted: int
+    retrieval_empty: bool
+    extraction_errors: int
+    fallback_answer: bool
+    cache_hits: int
+    cache_misses: int
+    cache_hits_by_namespace: dict[str, int]
+    cache_misses_by_namespace: dict[str, int]
+    top_retrieved_passages: list[str]
 
 @dataclass
 class EntityFact:
