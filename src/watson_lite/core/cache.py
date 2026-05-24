@@ -40,20 +40,22 @@ def _namespace_for_key(key: str) -> str:
     return prefix or "other"
 
 
-def _record_cache_lookup(total_bucket: str, namespace_bucket: str, key: str) -> None:
+def _record_cache_hit(key: str) -> None:
     namespace = _namespace_for_key(key)
     with _cache_metrics_lock:
-        _cache_metrics[total_bucket] = int(_cache_metrics[total_bucket]) + 1
-        namespace_metrics = _cache_metrics[namespace_bucket]
-        namespace_metrics[namespace] = namespace_metrics.get(namespace, 0) + 1
-
-
-def _record_cache_hit(key: str) -> None:
-    _record_cache_lookup("hits", "hits_by_namespace", key)
+        _cache_metrics["hits"] = int(_cache_metrics["hits"]) + 1
+        _cache_metrics["hits_by_namespace"][namespace] = (
+            _cache_metrics["hits_by_namespace"].get(namespace, 0) + 1
+        )
 
 
 def _record_cache_miss(key: str) -> None:
-    _record_cache_lookup("misses", "misses_by_namespace", key)
+    namespace = _namespace_for_key(key)
+    with _cache_metrics_lock:
+        _cache_metrics["misses"] = int(_cache_metrics["misses"]) + 1
+        _cache_metrics["misses_by_namespace"][namespace] = (
+            _cache_metrics["misses_by_namespace"].get(namespace, 0) + 1
+        )
 
 
 def get_cache_metrics_snapshot() -> CacheMetrics:

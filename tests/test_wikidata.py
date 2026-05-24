@@ -386,7 +386,12 @@ class TestWikidataGraph:
     def test_get_related_entities_max_limited(self) -> None:
         """max_related is honoured."""
         self.mock_cache.get_or_sentinel.return_value = [
-            {"entity": "Q1", "property_label": "p", "value": f"Q{i}", "value_type": "wikibase-entityid"}
+            {
+                "entity": "Q1",
+                "property_label": "p",
+                "value": f"Q{i}",
+                "value_type": "wikibase-entityid",
+            }
             for i in range(20)
         ]
         related = self.graph.get_related_entities("Q1", max_related=3)
