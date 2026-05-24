@@ -9,6 +9,7 @@ from watson_lite.core.nlp import NLPProcessor
 from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import BM25Retriever, fetch_wikipedia_passages
+from watson_lite.retrieval.query_formulation import generate_search_queries
 from watson_lite.retrieval.vector_retriever import VectorRetriever
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,18 @@ class WatsonLite:
         self._log_detail(verbose, "Sub-questions: %s", parsed.sub_questions)
 
         self._log_step(verbose, 2, "Parallel retrieval (BM25 + Vector)...")
-        passages = fetch_wikipedia_passages(question, top_k=5)
+        queries = generate_search_queries(parsed)
+        self._log_detail(verbose, "Search queries: %s", queries)
+
+        seen_texts: set[str] = set()
+        all_passages: list[Passage] = []
+        for q in queries:
+            for p in fetch_wikipedia_passages(q, top_k=5):
+                if p.text not in seen_texts:
+                    seen_texts.add(p.text)
+                    all_passages.append(p)
+
+        passages = all_passages
 
         if not passages:
             return FinalAnswer(

@@ -161,7 +161,6 @@ class TestWatsonLite:
         assert result.answer == "Gustave Eiffel"
         assert result.confidence == 0.85
         self.mock_nlp.process.assert_called_once()
-        self.mock_fetch.assert_called_once()
         self.mock_bm25.index.assert_called_once_with(test_passages)
         self.mock_bm25.retrieve.assert_called_once()
         self.mock_vector.index_passages.assert_called_once_with(test_passages)
