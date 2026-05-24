@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from watson_lite.core.models import Passage
 from watson_lite.retrieval.dataset_query_engine import (
     DatasetProvider,
@@ -48,6 +50,26 @@ class TestDatasetQueryEngine:
 
         assert result == []
         wiki_fetcher.assert_called_once_with("python", top_k=5)
+
+    def test_logs_unknown_datasets_once_at_initialization(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        wiki_fetcher = MagicMock(return_value=[])
+        with caplog.at_level("WARNING"):
+            engine = DatasetQueryEngine(
+                providers=(DatasetProvider("wikipedia", wiki_fetcher),),
+                enabled_datasets=("unknown", "wikipedia"),
+            )
+
+            engine.query("python", top_k=5)
+            engine.query("python", top_k=5)
+
+        warnings = [
+            record.message
+            for record in caplog.records
+            if "Unknown dataset configured" in record.message
+        ]
+        assert warnings == ["Unknown dataset configured: 'unknown'"]
 
     def test_continues_querying_after_provider_failure(self) -> None:
         broken_fetcher = MagicMock(side_effect=RuntimeError("boom"))

@@ -55,7 +55,12 @@ def fetch_mediawiki_passages(
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
-    def _fetch_article(title: str) -> list[Passage]:
+    def _fetch_article(
+        title: str,
+        *,
+        dataset_api_url: str,
+        dataset_article_base_url: str,
+    ) -> list[Passage]:
         extract_params: dict[str, Any] = {
             "action": "query",
             "titles": title,
@@ -65,7 +70,10 @@ def fetch_mediawiki_passages(
         }
         try:
             eresp = requests.get(
-                api_url, params=extract_params, headers=WIKI_HEADERS, timeout=10
+                dataset_api_url,
+                params=extract_params,
+                headers=WIKI_HEADERS,
+                timeout=10,
             )
             pages = eresp.json().get("query", {}).get("pages", {})
             chunks: list[Passage] = []
@@ -83,7 +91,7 @@ def fetch_mediawiki_passages(
                             text=chunk,
                             source=title,
                             url=(
-                                f"{article_base_url}/{title.replace(' ', '_')}"
+                                f"{dataset_article_base_url}/{title.replace(' ', '_')}"
                             ),
                         )
                     )
@@ -96,7 +104,15 @@ def fetch_mediawiki_passages(
     passages: list[Passage] = []
     if titles:
         with ThreadPoolExecutor(max_workers=min(len(titles), 5)) as executor:
-            futures = {executor.submit(_fetch_article, t): t for t in titles}
+            futures = {
+                executor.submit(
+                    _fetch_article,
+                    title,
+                    dataset_api_url=api_url,
+                    dataset_article_base_url=article_base_url,
+                ): title
+                for title in titles
+            }
             for future in as_completed(futures):
                 passages.extend(future.result())
 

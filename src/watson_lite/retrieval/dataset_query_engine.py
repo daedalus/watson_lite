@@ -38,15 +38,23 @@ class DatasetQueryEngine:
     ) -> None:
         provider_map = {provider.name: provider for provider in providers}
         self._providers = provider_map
-        self._enabled_datasets = enabled_datasets
+        unknown_datasets = tuple(
+            dataset_name
+            for dataset_name in enabled_datasets
+            if dataset_name not in provider_map
+        )
+        for dataset_name in unknown_datasets:
+            logger.warning("Unknown dataset configured: '%s'", dataset_name)
+        self._enabled_datasets = tuple(
+            dataset_name
+            for dataset_name in enabled_datasets
+            if dataset_name in provider_map
+        )
 
     def query(self, query: str, top_k: int) -> list[Passage]:
         passages: list[Passage] = []
         for dataset_name in self._enabled_datasets:
-            provider = self._providers.get(dataset_name)
-            if provider is None:
-                logger.warning("Unknown dataset configured: '%s'", dataset_name)
-                continue
+            provider = self._providers[dataset_name]
             try:
                 passages.extend(provider.fetch_passages(query, top_k))
             except Exception as err:  # pragma: no cover - defensive isolation
