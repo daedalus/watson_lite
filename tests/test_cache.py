@@ -2,9 +2,12 @@ import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from watson_lite.core.cache import (
     SENTINEL,
     Cache,
+    _max_entries_from_env,
     _record_cache_hit,
     _record_cache_miss,
     get_cache_metrics_snapshot,
@@ -89,6 +92,11 @@ class TestCache:
         limited.close()
         os.unlink(tmp_path)
 
+    @pytest.mark.parametrize("ttl_seconds", [0, -1])
+    def test_set_rejects_non_positive_ttl(self, ttl_seconds: int) -> None:
+        with pytest.raises(ValueError, match="ttl_seconds must be positive"):
+            self.cache.set("key", "value", ttl_seconds=ttl_seconds)
+
     def test_cache_metrics_updates_are_thread_safe(self) -> None:
         reset_cache_metrics()
 
@@ -107,3 +115,15 @@ class TestCache:
         assert metrics["misses"] == 1600
         assert metrics["hits_by_namespace"] == {"wiki": 1600}
         assert metrics["misses_by_namespace"] == {"graph": 1600}
+
+
+class TestCacheEnvParsing:
+    def test_max_entries_from_env_invalid(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("WATSON_LITE_CACHE_MAX_ENTRIES", "invalid")
+        with pytest.raises(
+            ValueError,
+            match="WATSON_LITE_CACHE_MAX_ENTRIES must be an integer",
+        ):
+            _max_entries_from_env()

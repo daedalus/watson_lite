@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 # Store the cache database in a platform-appropriate user cache directory so
 # it does not end up inside the installed package tree.
 _DEFAULT_CACHE_DIR = pathlib.Path.home() / ".cache" / "watson_lite"
+_DEFAULT_MAX_ENTRIES = 5000
+_MAINTENANCE_INTERVAL_WRITES = 25
 
 # Sentinel used to distinguish a cached ``None`` value from a cache miss.
 SENTINEL = object()
@@ -90,7 +92,12 @@ def _default_db_path() -> str:
 
 
 class Cache:
-    def __init__(self, db_path: str | None = None, *, max_entries: int = 5000) -> None:
+    def __init__(
+        self,
+        db_path: str | None = None,
+        *,
+        max_entries: int = _DEFAULT_MAX_ENTRIES,
+    ) -> None:
         self.db_path = db_path if db_path is not None else _default_db_path()
         self.max_entries = max_entries
         self.con = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -105,7 +112,13 @@ class Cache:
             "CREATE INDEX IF NOT EXISTS idx_cache_created_at ON cache(created_at)"
         )
         self._ensure_expires_column()
+        self._entry_count = self._count_entries()
+        self._writes_since_maintenance = 0
         self._delete_expired()
+
+    def _count_entries(self) -> int:
+        row = self.con.execute("SELECT COUNT(*) FROM cache").fetchone()
+        return int(row[0]) if row else 0
 
     @staticmethod
     def canonicalize_key(key: str) -> str:
@@ -133,15 +146,14 @@ class Cache:
         )
         deleted = int(cur.rowcount or 0)
         if deleted:
+            self._entry_count = max(0, self._entry_count - deleted)
             self.con.commit()
         return deleted
 
     def _prune_if_needed(self) -> int:
         if self.max_entries <= 0:
             return 0
-        row = self.con.execute("SELECT COUNT(*) FROM cache").fetchone()
-        count = int(row[0]) if row else 0
-        overflow = count - self.max_entries
+        overflow = self._entry_count - self.max_entries
         if overflow <= 0:
             return 0
         cur = self.con.execute(
@@ -152,8 +164,16 @@ class Cache:
         )
         deleted = int(cur.rowcount or 0)
         if deleted:
+            self._entry_count = max(0, self._entry_count - deleted)
             self.con.commit()
         return deleted
+
+    def _delete_key(self, canonical_key: str) -> None:
+        cur = self.con.execute("DELETE FROM cache WHERE key = ?", (canonical_key,))
+        deleted = int(cur.rowcount or 0)
+        if deleted:
+            self._entry_count = max(0, self._entry_count - deleted)
+            self.con.commit()
 
     @staticmethod
     def _unwrap(raw: str) -> Any:  # noqa: ANN401
@@ -181,8 +201,7 @@ class Cache:
         if row:
             expires_at = row[1]
             if expires_at is not None and float(expires_at) <= time.time():
-                self.con.execute("DELETE FROM cache WHERE key = ?", (canonical_key,))
-                self.con.commit()
+                self._delete_key(canonical_key)
                 return None
             return self._unwrap(row[0])
         return None
@@ -200,8 +219,7 @@ class Cache:
         if row:
             expires_at = row[1]
             if expires_at is not None and float(expires_at) <= time.time():
-                self.con.execute("DELETE FROM cache WHERE key = ?", (canonical_key,))
-                self.con.commit()
+                self._delete_key(canonical_key)
                 _record_cache_miss(canonical_key)
                 return SENTINEL
             _record_cache_hit(canonical_key)
@@ -211,7 +229,13 @@ class Cache:
 
     def set(self, key: str, value: Any, *, ttl_seconds: int | None = None) -> None:  # noqa: ANN401
         canonical_key = self.canonicalize_key(key)
+        if ttl_seconds is not None and ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive (greater than zero)")
         expires_at = time.time() + ttl_seconds if ttl_seconds is not None else None
+        existing = self.con.execute(
+            "SELECT 1 FROM cache WHERE key = ?",
+            (canonical_key,),
+        ).fetchone()
         # Wrap the value so that ``None`` is stored distinctly from a miss.
         self.con.execute(
             "INSERT OR REPLACE INTO cache (key, value, created_at, expires_at) "
@@ -224,12 +248,23 @@ class Cache:
             ),
         )
         self.con.commit()
-        self._delete_expired()
-        self._prune_if_needed()
+        if existing is None:
+            self._entry_count += 1
+        self._writes_since_maintenance += 1
+        needs_maintenance = (
+            self._writes_since_maintenance >= _MAINTENANCE_INTERVAL_WRITES
+            or self._entry_count > self.max_entries
+        )
+        if needs_maintenance:
+            self._delete_expired()
+            self._prune_if_needed()
+            self._writes_since_maintenance = 0
 
     def clear(self) -> None:
         self.con.execute("DELETE FROM cache")
         self.con.commit()
+        self._entry_count = 0
+        self._writes_since_maintenance = 0
 
     def close(self) -> None:
         self.con.close()
@@ -238,10 +273,20 @@ class Cache:
 _cache: Cache | None = None
 
 
+def _max_entries_from_env() -> int:
+    raw = os.getenv("WATSON_LITE_CACHE_MAX_ENTRIES", str(_DEFAULT_MAX_ENTRIES))
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"WATSON_LITE_CACHE_MAX_ENTRIES must be an integer; received {raw!r}"
+        ) from exc
+
+
 def get_cache() -> Cache:
     global _cache
     if _cache is None:
-        max_entries = int(os.getenv("WATSON_LITE_CACHE_MAX_ENTRIES", "5000"))
+        max_entries = _max_entries_from_env()
         _cache = Cache(max_entries=max_entries)
         atexit.register(_cache.close)
     return _cache
