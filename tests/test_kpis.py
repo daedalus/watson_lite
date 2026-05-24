@@ -1,6 +1,7 @@
+import pytest
+
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.kpis import BenchmarkLabel, evaluate_kpis
-import pytest
 
 
 def _answer(

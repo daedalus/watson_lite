@@ -4,8 +4,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from watson_lite.core.cache import CacheMetrics, get_cache_metrics_snapshot
-from watson_lite.core.fallbacks import is_fallback_answer_text
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
+from watson_lite.core.fallbacks import is_fallback_answer_text
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer, GraphResult, Passage
 from watson_lite.core.nlp import NLPProcessor
 from watson_lite.graph.wikidata import WikidataGraph

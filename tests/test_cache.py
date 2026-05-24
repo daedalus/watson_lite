@@ -3,8 +3,8 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 from watson_lite.core.cache import (
-    Cache,
     SENTINEL,
+    Cache,
     _record_cache_hit,
     _record_cache_miss,
     get_cache_metrics_snapshot,
