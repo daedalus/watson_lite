@@ -287,19 +287,28 @@ class TestWatsonLite:
 
     def test_reindex_on_different_passages(self) -> None:
         """index/index_passages must be called again when passages change."""
-        parsed = ParsedQuestion(
-            raw="test",
+        parsed_1 = ParsedQuestion(
+            raw="q1",
             question_type="what",
             entities=[],
             noun_chunks=[],
             root_verb=None,
-            sub_questions=["test"],
-            keywords=["test"],
+            sub_questions=["q1"],
+            keywords=["q1"],
+        )
+        parsed_2 = ParsedQuestion(
+            raw="q2",
+            question_type="what",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["q2"],
+            keywords=["q2"],
         )
         answer_obj = FinalAnswer(
             answer="ans", confidence=0.9, source="Wiki", url="http://e.com"
         )
-        self.mock_nlp.process.return_value = parsed
+        self.mock_nlp.process.side_effect = [parsed_1, parsed_2]
         self.mock_bm25.retrieve.return_value = []
         self.mock_vector.retrieve.return_value = []
         self.mock_ranker.rank.return_value = []

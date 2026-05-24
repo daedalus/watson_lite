@@ -39,16 +39,25 @@ class DatasetQueryEngine:
         provider_map = {provider.name: provider for provider in providers}
         self._providers = provider_map
         self._enabled_datasets = enabled_datasets
+        self._query_cache: dict[str, list[Passage]] = {}
 
     def query(self, query: str, top_k: int) -> list[Passage]:
         passages: list[Passage] = []
         for dataset_name in self._enabled_datasets:
+            cache_key = f"dq:{dataset_name}:{query}:{top_k}"
+            cached = self._query_cache.get(cache_key)
+            if cached is not None:
+                passages.extend(cached)
+                continue
+
             provider = self._providers.get(dataset_name)
             if provider is None:
                 logger.warning("Unknown dataset configured: '%s'", dataset_name)
                 continue
             try:
-                passages.extend(provider.fetch_passages(query, top_k))
+                fetched = provider.fetch_passages(query, top_k)
+                self._query_cache[cache_key] = fetched
+                passages.extend(fetched)
             except Exception as err:  # pragma: no cover - defensive isolation
                 logger.warning(
                     "Dataset provider '%s' failed for query '%s': %s",

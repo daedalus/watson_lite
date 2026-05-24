@@ -160,19 +160,12 @@ def resolve_span_to_qid(span: str) -> str | None:
 def score_type_coercion(
     candidates: list[AnswerCandidate],
     lat_qids: list[str],
+    candidate_qid: str | None = None,
 ) -> float:
-    """Score how well the top candidate's Wikidata type matches the expected LAT.
-
-    Returns a float in [0.0, 1.0]:
-    - 1.0: candidate exactly matches an expected QID
-    - 0.5: candidate's type hierarchy includes an expected QID
-    - 0.0: no match found or no LAT to check
-    """
     if not candidates or not lat_qids:
         return 0.0
 
-    best = candidates[0]
-    qid = resolve_span_to_qid(best.span)
+    qid = candidate_qid or resolve_span_to_qid(candidates[0].span)
     if not qid:
         return 0.0
 

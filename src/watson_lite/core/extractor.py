@@ -18,7 +18,7 @@ from watson_lite.scoring.consistency import (
     score_temporal_consistency,
 )
 from watson_lite.scoring.term_match import score_term_match
-from watson_lite.scoring.type_coercion import score_type_coercion
+from watson_lite.scoring.type_coercion import resolve_span_to_qid, score_type_coercion
 
 if TYPE_CHECKING:
     from transformers.pipelines.base import Pipeline
@@ -169,8 +169,14 @@ class ConfidenceScorer:
             else 0.0
         )
 
+        best_qid = (
+            resolve_span_to_qid(best.span)
+            if enable_type_coercion or enable_answer_merging
+            else None
+        )
+
         type_signal = (
-            score_type_coercion(candidates, lat_qids or [])
+            score_type_coercion(candidates, lat_qids or [], candidate_qid=best_qid)
             if enable_type_coercion
             else 0.0
         )
