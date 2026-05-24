@@ -66,3 +66,5 @@ class ParsedQuestion:
     root_verb: str | None
     sub_questions: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
+    lat: str | None = None
+    lat_qids: list[str] = field(default_factory=list)

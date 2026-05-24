@@ -177,6 +177,39 @@ class WikidataGraph:
             logger.warning("Failed to resolve QID labels", exc_info=True)
             return {}
 
+    def _parse_claims_to_facts(
+        self, qid: str, claims: dict, max_facts: int
+    ) -> tuple[list[EntityFact], set[str]]:
+        facts: list[EntityFact] = []
+        seen: set[str] = set()
+        qid_values: set[str] = set()
+        for pid, claim_list in claims.items():
+            for claim in claim_list[:3]:
+                mainsnak = claim.get("mainsnak", {})
+                if mainsnak.get("snaktype") != "value":
+                    continue
+                datavalue = mainsnak.get("datavalue", {})
+                val = datavalue.get("value")
+                is_qid = isinstance(val, dict)
+                if is_qid:
+                    raw_val = str(val.get("id", ""))
+                else:
+                    raw_val = str(val)
+                if raw_val in seen or len(facts) >= max_facts:
+                    continue
+                seen.add(raw_val)
+                if is_qid and raw_val.startswith("Q"):
+                    qid_values.add(raw_val)
+                facts.append(
+                    EntityFact(
+                        entity=qid,
+                        property_label=_PROPERTY_LABELS.get(pid, pid),
+                        value=raw_val,
+                        value_type=datavalue.get("type", "literal"),
+                    )
+                )
+        return facts, qid_values
+
     def get_entity_facts(self, qid: str, max_facts: int = 15) -> list[EntityFact]:
         cache = get_cache()
         cache_key = f"wd:facts:{qid}"
@@ -192,47 +225,14 @@ class WikidataGraph:
                 return []
             data = resp.json()
             entity = data.get("entities", {}).get(qid, {})
-            claims = entity.get("claims", {})
-
-            facts: list[EntityFact] = []
-            seen: set[str] = set()
-            qid_values: set[str] = set()
-            for pid, claim_list in claims.items():
-                for claim in claim_list[:3]:
-                    mainsnak = claim.get("mainsnak", {})
-                    if mainsnak.get("snaktype") != "value":
-                        continue
-                    datavalue = mainsnak.get("datavalue", {})
-                    val = datavalue.get("value")
-                    is_qid = isinstance(val, dict)
-                    if is_qid:
-                        raw_val = str(val.get("id", ""))
-                        name_val = raw_val
-                    else:
-                        raw_val = str(val)
-                        name_val = raw_val
-                    if raw_val in seen or len(facts) >= max_facts:
-                        continue
-                    seen.add(raw_val)
-                    if is_qid and raw_val.startswith("Q"):
-                        qid_values.add(raw_val)
-                    facts.append(
-                        EntityFact(
-                            entity=qid,
-                            property_label=_PROPERTY_LABELS.get(pid, pid),
-                            value=name_val,
-                            value_type=datavalue.get("type", "literal"),
-                        )
-                    )
-            # Resolve QID values to human-readable labels so the confidence
-            # scorer can match answer spans against them.
+            facts, qid_values = self._parse_claims_to_facts(
+                qid, entity.get("claims", {}), max_facts
+            )
             if qid_values:
                 labels = self._resolve_qid_labels(qid_values)
                 for f in facts:
                     if f.value in labels:
                         f.value = labels[f.value]
-            # Always cache, even for entities with no useful claims, so that
-            # subsequent calls for the same QID do not make redundant requests.
             cache.set(cache_key, [f.__dict__ for f in facts])
             return facts
         except Exception as e:

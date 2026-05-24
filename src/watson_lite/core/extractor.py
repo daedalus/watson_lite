@@ -15,6 +15,7 @@ from watson_lite.core.models import (
     GraphResult,
     RankedPassage,
 )
+from watson_lite.scoring.type_coercion import score_type_coercion
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,7 @@ def _question_type_bonus(span: str, question_type: str) -> float:
     """Return a small bonus in [0, 0.1] when the span form matches the question type."""
     if question_type == "who" and _MULTI_WORD_CAP.search(span):
         return 0.1
-    if question_type == "when" and (
-        _YEAR.search(span) or _DATE_WORD.search(span)
-    ):
+    if question_type == "when" and (_YEAR.search(span) or _DATE_WORD.search(span)):
         return 0.1
     return 0.0
 
@@ -85,6 +84,7 @@ class ConfidenceScorer:
         candidates: list[AnswerCandidate],
         graph_results: list[GraphResult],
         question_type: str,
+        lat_qids: list[str] | None = None,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -120,12 +120,15 @@ class ConfidenceScorer:
 
         qt_bonus = _question_type_bonus(best.span, question_type)
 
+        type_signal = score_type_coercion(candidates, lat_qids or [])
+
         confidence = (
-            0.50 * extraction_conf
-            + 0.20 * agreement
-            + 0.20 * graph_signal
+            0.45 * extraction_conf
+            + 0.15 * agreement
+            + 0.15 * graph_signal
             + 0.10 * rank_signal
             + qt_bonus
+            + 0.15 * type_signal
         )
         confidence = round(min(confidence, 1.0), 3)
 
@@ -142,5 +145,6 @@ class ConfidenceScorer:
                 "graph_corroboration": graph_signal,
                 "passage_rank_signal": round(rank_signal, 3),
                 "question_type_bonus": qt_bonus,
+                "type_coercion": type_signal,
             },
         )

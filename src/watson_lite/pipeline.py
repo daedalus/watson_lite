@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
-from watson_lite.core.models import FinalAnswer, Passage
+from watson_lite.core.models import FinalAnswer, GraphResult, Passage
 from watson_lite.core.nlp import NLPProcessor
 from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
@@ -56,22 +56,36 @@ class WatsonLite:
             vector_future = executor.submit(_vector_work)
             return bm25_future.result(), vector_future.result()
 
+    @staticmethod
+    def _log_step(verbose: bool, num: int, message: str) -> None:
+        if verbose:
+            logger.info("[%d/6] %s", num, message)
+
+    @staticmethod
+    def _log_detail(verbose: bool, fmt: str, *args: object) -> None:
+        if verbose:
+            logger.info("      " + fmt, *args)
+
+    def _log_graph_results(
+        self, verbose: bool, graph_results: list[GraphResult]
+    ) -> None:
+        if verbose:
+            for gr in graph_results:
+                logger.info("      %s: %d facts", gr.entity_name, len(gr.facts))
+
     def answer(self, question: str, verbose: bool = True) -> FinalAnswer:
         if not question:
             raise ValueError("question must not be empty")
 
         t0 = time.time()
 
-        if verbose:
-            logger.info("[1/6] NLP preprocessing...")
+        self._log_step(verbose, 1, "NLP preprocessing...")
         parsed = self.nlp.process(question)
-        if verbose:
-            logger.info("      Type: %s", parsed.question_type)
-            logger.info("      Entities: %s", [e["text"] for e in parsed.entities])
-            logger.info("      Sub-questions: %s", parsed.sub_questions)
+        self._log_detail(verbose, "Type: %s", parsed.question_type)
+        self._log_detail(verbose, "Entities: %s", [e["text"] for e in parsed.entities])
+        self._log_detail(verbose, "Sub-questions: %s", parsed.sub_questions)
 
-        if verbose:
-            logger.info("[2/6] Parallel retrieval (BM25 + Vector)...")
+        self._log_step(verbose, 2, "Parallel retrieval (BM25 + Vector)...")
         passages = fetch_wikipedia_passages(question, top_k=5)
 
         if not passages:
@@ -90,25 +104,19 @@ class WatsonLite:
             question, passages, needs_reindex
         )
 
-        if verbose:
-            logger.info("      BM25: %d passages", len(bm25_results))
-            logger.info("      Vector: %d passages", len(vector_results))
+        self._log_detail(verbose, "BM25: %d passages", len(bm25_results))
+        self._log_detail(verbose, "Vector: %d passages", len(vector_results))
 
-        if verbose:
-            logger.info("[3/6] Graph enrichment (Wikidata)...")
+        self._log_step(verbose, 3, "Graph enrichment (Wikidata)...")
         entity_names = [str(e["text"]) for e in parsed.entities]
         graph_results = self.graph.enrich_all(entity_names) if entity_names else []
 
-        if verbose:
-            for gr in graph_results:
-                logger.info("      %s: %d facts", gr.entity_name, len(gr.facts))
+        self._log_graph_results(verbose, graph_results)
 
-        if verbose:
-            logger.info("[4/6] Ranking (RRF + cross-encoder)...")
+        self._log_step(verbose, 4, "Ranking (RRF + cross-encoder)...")
         ranked = self.ranker.rank(question, bm25_results, vector_results, top_k=10)
 
-        if verbose:
-            logger.info("[5/6] Extractive answer span extraction...")
+        self._log_step(verbose, 5, "Extractive answer span extraction...")
 
         all_candidates = []
         for sub_q in parsed.sub_questions:
@@ -117,9 +125,13 @@ class WatsonLite:
 
         all_candidates.sort(key=lambda c: c.extraction_score, reverse=True)
 
-        if verbose:
-            logger.info("[6/6] Confidence scoring...")
-        answer = self.scorer.score(all_candidates, graph_results, parsed.question_type)
+        self._log_step(verbose, 6, "Confidence scoring...")
+        answer = self.scorer.score(
+            all_candidates,
+            graph_results,
+            parsed.question_type,
+            lat_qids=parsed.lat_qids,
+        )
 
         elapsed = time.time() - t0
         if verbose:
