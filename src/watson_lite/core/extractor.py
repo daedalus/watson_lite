@@ -107,7 +107,7 @@ class ExtractiveReader:
 
 
 class ConfidenceScorer:
-    def score(
+    def score(  # pylint: disable=too-many-arguments
         self,
         candidates: list[AnswerCandidate],
         graph_results: list[GraphResult],

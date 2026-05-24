@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from watson_lite.core.cache import SENTINEL
 from watson_lite.core.models import Passage

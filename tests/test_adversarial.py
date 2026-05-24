@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from watson_lite.core.cache import Cache, SENTINEL, is_cache_miss
+from watson_lite.core.cache import SENTINEL, Cache, is_cache_miss
 from watson_lite.core.extractor import ConfidenceScorer, _question_type_bonus
 from watson_lite.core.models import (
     AnswerCandidate,
@@ -22,10 +22,9 @@ from watson_lite.core.models import (
     RankedPassage,
 )
 from watson_lite.graph.wikidata import WikidataGraph
-from watson_lite.ranking.ranker import RRFFusion, Ranker
+from watson_lite.ranking.ranker import Ranker, RRFFusion
 from watson_lite.retrieval.bm25_retriever import BM25Retriever
 from watson_lite.retrieval.vector_retriever import VectorRetriever
-
 
 # ---------------------------------------------------------------------------
 # Cache — serialisation, corruption, legacy format
@@ -810,8 +809,8 @@ class TestQuestionTypeBonus:
 
 class TestCacheCoverage:
     def test_default_db_path_creates_dir(self) -> None:
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
 
         with (
             patch(

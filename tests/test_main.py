@@ -1,7 +1,7 @@
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from watson_lite.__main__ import main
 from watson_lite.core.config import FeatureConfig
@@ -76,7 +76,12 @@ class TestMain:
             patch.object(
                 sys,
                 "argv",
-                ["prog", "--benchmark-dataset", "/tmp/bench.json", "--regression-check"],
+                [
+                    "prog",
+                    "--benchmark-dataset",
+                    "/tmp/bench.json",
+                    "--regression-check",
+                ],
             ),
         ):
             mock_run.return_value = ([], [{"metric": "f1"}])

@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from watson_lite.core.config import FeatureConfig, OPTIONAL_FEATURES
+from watson_lite.core.config import OPTIONAL_FEATURES, FeatureConfig
 from watson_lite.evaluation.kpis import BenchmarkLabel, KPIReport, evaluate_kpis
 from watson_lite.pipeline import WatsonLite
 
@@ -52,7 +52,7 @@ def load_benchmark_dataset(path: str) -> list[BenchmarkSample]:
         else:
             items = parsed
         if not isinstance(items, list):
-            raise ValueError("benchmark dataset must be a list or {'samples': [...]} ")
+            raise ValueError("benchmark dataset must be a list or {'samples': [...]}")
         raw = [item for item in items if isinstance(item, dict)]
 
     samples: list[BenchmarkSample] = []
@@ -184,7 +184,7 @@ def _report_row(result: BenchmarkProfileResult) -> dict[str, Any]:
     }
 
 
-def run_benchmark_profiles(
+def run_benchmark_profiles(  # pylint: disable=too-many-arguments
     *,
     dataset_path: str,
     config: FeatureConfig,
@@ -197,11 +197,7 @@ def run_benchmark_profiles(
     thresholds: RegressionThresholds | None = None,
 ) -> tuple[list[BenchmarkProfileResult], list[dict[str, float | str]]]:
     samples = load_benchmark_dataset(dataset_path)
-    profiles = (
-        build_ablation_profiles()
-        if ablation_sweep
-        else {"configured": config}
-    )
+    profiles = build_ablation_profiles() if ablation_sweep else {"configured": config}
     if regression_check and "baseline" not in profiles:
         profiles = {"baseline": FeatureConfig.baseline(), **profiles}
 

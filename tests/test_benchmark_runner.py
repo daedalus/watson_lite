@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from watson_lite.core.config import FeatureConfig, OPTIONAL_FEATURES
+from watson_lite.core.config import OPTIONAL_FEATURES, FeatureConfig
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.benchmark_runner import (
     RegressionThresholds,

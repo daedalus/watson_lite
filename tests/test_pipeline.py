@@ -1,6 +1,8 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from watson_lite.core.config import FeatureConfig
 from watson_lite.core.models import (
     AnswerCandidate,
     FinalAnswer,
@@ -8,7 +10,6 @@ from watson_lite.core.models import (
     Passage,
     RankedPassage,
 )
-from watson_lite.core.config import FeatureConfig
 from watson_lite.pipeline import WatsonLite
 
 
@@ -360,9 +361,7 @@ class TestWatsonLite:
         self.pipeline.answer("test question", verbose=False)
 
         assert self.mock_ranker.rank.call_args is not None
-        assert (
-            self.mock_ranker.rank.call_args.kwargs["use_cross_encoder"] is False
-        )
+        assert self.mock_ranker.rank.call_args.kwargs["use_cross_encoder"] is False
 
     def test_scoring_toggles_off(self) -> None:
         self._setup_success_flow()

@@ -1,5 +1,6 @@
 __version__ = "0.1.1"
 
+from watson_lite.core.config import FeatureConfig
 from watson_lite.core.models import (
     AnswerCandidate,
     AnswerDiagnostics,
@@ -10,7 +11,6 @@ from watson_lite.core.models import (
     Passage,
     RankedPassage,
 )
-from watson_lite.core.config import FeatureConfig
 from watson_lite.pipeline import WatsonLite
 
 __all__ = [

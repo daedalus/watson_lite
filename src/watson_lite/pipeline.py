@@ -38,7 +38,7 @@ class WatsonLite:
         self._last_passage_hash: str | None = None
         logger.info("All components loaded. Ready.")
 
-    def _retrieve_parallel(
+    def _retrieve_parallel(  # pylint: disable=too-many-arguments
         self,
         question: str,
         passages: list[Passage],

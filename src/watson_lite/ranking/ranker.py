@@ -73,7 +73,7 @@ class Ranker:
         self.rrf = RRFFusion()
         self.cross_encoder = CrossEncoderReranker()
 
-    def rank(
+    def rank(  # pylint: disable=too-many-arguments
         self,
         query: str,
         bm25_results: list[Passage],

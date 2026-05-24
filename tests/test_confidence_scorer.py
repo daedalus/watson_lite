@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from watson_lite.core.extractor import ConfidenceScorer, _question_type_bonus
 from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
