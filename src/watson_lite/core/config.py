@@ -13,6 +13,7 @@ class FeatureConfig:
     cross_encoder_reranking: bool = True
     question_type_bonus: bool = True
     type_coercion: bool = True
+    dataset_sources: tuple[str, ...] = ("wikipedia",)
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
     rerank_top_k: int = 10

@@ -11,7 +11,15 @@ from watson_lite.core.models import AnswerDiagnostics, FinalAnswer, GraphResult,
 from watson_lite.core.nlp import NLPProcessor
 from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
-from watson_lite.retrieval.bm25_retriever import BM25Retriever, fetch_wikipedia_passages
+from watson_lite.retrieval.bm25_retriever import (
+    BM25Retriever,
+    fetch_wikibooks_passages,
+    fetch_wikipedia_passages,
+)
+from watson_lite.retrieval.dataset_query_engine import (
+    DatasetQueryEngine,
+    FunctionDatasetProvider,
+)
 from watson_lite.retrieval.query_formulation import generate_search_queries
 from watson_lite.retrieval.vector_retriever import VectorRetriever
 
@@ -31,6 +39,13 @@ class WatsonLite:
         self.nlp = NLPProcessor()
         self.bm25 = BM25Retriever()
         self.vector = VectorRetriever()
+        self.dataset_query_engine = DatasetQueryEngine(
+            providers=(
+                FunctionDatasetProvider("wikipedia", fetch_wikipedia_passages),
+                FunctionDatasetProvider("wikibooks", fetch_wikibooks_passages),
+            ),
+            enabled_datasets=self.config.dataset_sources,
+        )
         self.graph = WikidataGraph()
         self.ranker = Ranker()
         self.reader = ExtractiveReader()
@@ -148,7 +163,7 @@ class WatsonLite:
         seen_texts: set[str] = set()
         all_passages: list[Passage] = []
         for q in queries:
-            for p in fetch_wikipedia_passages(
+            for p in self.dataset_query_engine.query(
                 q, top_k=self.config.wikipedia_top_k_per_query
             ):
                 if p.text not in seen_texts:

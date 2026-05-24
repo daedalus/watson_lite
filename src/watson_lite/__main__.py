@@ -17,6 +17,13 @@ except PackageNotFoundError:
     _VERSION = "unknown"
 
 
+def _parse_datasets(value: str) -> tuple[str, ...]:
+    datasets = tuple(item.strip().lower() for item in value.split(",") if item.strip())
+    if not datasets:
+        raise argparse.ArgumentTypeError("At least one dataset must be provided")
+    return datasets
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="watson-lite")
     parser.add_argument("question", nargs="*", help="Single question to answer")
@@ -59,6 +66,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument("--wiki-top-k", type=int, default=5)
+    parser.add_argument(
+        "--datasets",
+        type=_parse_datasets,
+        default=("wikipedia",),
+        help="Comma-separated datasets to query (e.g. wikipedia,wikibooks)",
+    )
     parser.add_argument("--retrieval-top-k", type=int, default=20)
     parser.add_argument("--rerank-top-k", type=int, default=10)
     parser.add_argument("--extract-top-k", type=int, default=5)
@@ -87,6 +100,7 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         cross_encoder_reranking=args.cross_encoder_reranking,
         question_type_bonus=args.question_type_bonus,
         type_coercion=args.type_coercion,
+        dataset_sources=args.datasets,
         wikipedia_top_k_per_query=args.wiki_top_k,
         retrieval_top_k=args.retrieval_top_k,
         rerank_top_k=args.rerank_top_k,
