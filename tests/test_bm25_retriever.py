@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from watson_lite.core.cache import SENTINEL
 from watson_lite.core.models import Passage
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
@@ -13,7 +14,8 @@ class TestFetchWikipediaPassages:
         self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
         self.mock_get_cache = self.cache_patcher.start()
         self.mock_cache = MagicMock()
-        self.mock_cache.get.return_value = None
+        # Default: every key is a cache miss.
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
 
     def teardown_method(self) -> None:
@@ -30,7 +32,7 @@ class TestFetchWikipediaPassages:
                 "rank": 0,
             }
         ]
-        self.mock_cache.get.return_value = cached
+        self.mock_cache.get_or_sentinel.return_value = cached
 
         result = fetch_wikipedia_passages("test")
         assert len(result) == 1
@@ -114,7 +116,7 @@ class TestBM25Retriever:
         self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
         self.mock_get_cache = self.cache_patcher.start()
         self.mock_cache = MagicMock()
-        self.mock_cache.get.return_value = None
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
 
         self.bm25s_patcher = patch("watson_lite.retrieval.bm25_retriever.bm25s")

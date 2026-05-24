@@ -1,10 +1,12 @@
 import copy
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
-import bm25s
+import bm25s  # type: ignore[import-untyped]
 import requests
 
-from watson_lite.core.cache import get_cache
+from watson_lite.core.cache import get_cache, is_cache_miss
 from watson_lite.core.models import Passage
 
 logger = logging.getLogger(__name__)
@@ -13,7 +15,7 @@ WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
 CHUNK_SIZE = 200
 WIKI_HEADERS = {
-    "User-Agent": "WatsonLite/1.0 (educational project; mailto:user@example.com)"
+    "User-Agent": "WatsonLite/1.0 (educational project; clavijodario@gmail.com)"
 }
 
 
@@ -22,12 +24,12 @@ def fetch_wikipedia_passages(
 ) -> list[Passage]:
     cache = get_cache()
     cache_key = f"wiki:passages:{query.lower().strip()}"
-    cached = cache.get(cache_key)
-    if cached is not None:
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
         logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
-    search_params = {
+    search_params: dict[str, Any] = {
         "action": "query",
         "list": "search",
         "srsearch": query,
@@ -44,10 +46,8 @@ def fetch_wikipedia_passages(
         logger.warning("Wikipedia search error: %s", e)
         return []
 
-    passages = []
-    for item in results:
-        title = item["title"]
-        extract_params = {
+    def _fetch_article(title: str) -> list[Passage]:
+        extract_params: dict[str, Any] = {
             "action": "query",
             "titles": title,
             "prop": "extracts",
@@ -59,6 +59,7 @@ def fetch_wikipedia_passages(
                 WIKI_API, params=extract_params, headers=WIKI_HEADERS, timeout=10
             )
             pages = eresp.json().get("query", {}).get("pages", {})
+            chunks: list[Passage] = []
             for page in pages.values():
                 text = page.get("extract", "")
                 if not text:
@@ -68,15 +69,25 @@ def fetch_wikipedia_passages(
                     chunk = " ".join(words[i : i + CHUNK_SIZE])
                     if len(chunk.split()) < 20:
                         continue
-                    passages.append(
+                    chunks.append(
                         Passage(
                             text=chunk,
                             source=title,
                             url=f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}",
                         )
                     )
+            return chunks
         except Exception as e:
             logger.warning("Extract error for '%s': %s", title, e)
+            return []
+
+    titles = [item["title"] for item in results]
+    passages: list[Passage] = []
+    if titles:
+        with ThreadPoolExecutor(max_workers=min(len(titles), 5)) as executor:
+            futures = {executor.submit(_fetch_article, t): t for t in titles}
+            for future in as_completed(futures):
+                passages.extend(future.result())
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))

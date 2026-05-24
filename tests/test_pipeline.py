@@ -71,6 +71,7 @@ class TestWatsonLite:
         self.mock_ranker_cls.assert_called_once()
         self.mock_reader_cls.assert_called_once()
         self.mock_scorer_cls.assert_called_once()
+        assert self.pipeline._last_passage_hash is None
 
     def test_empty_question_raises(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
@@ -200,3 +201,71 @@ class TestWatsonLite:
 
         result = self.pipeline.answer("test", verbose=False)
         assert result.answer == "No answer found"
+
+    def test_reindex_skipped_on_same_passages(self) -> None:
+        """index/index_passages must be called only once when passages are identical."""
+        parsed = ParsedQuestion(
+            raw="test",
+            question_type="what",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=["test"],
+        )
+        passages = [Passage(text="same text", source="Wiki", url="http://e.com")]
+        answer_obj = FinalAnswer(
+            answer="ans", confidence=0.9, source="Wiki", url="http://e.com"
+        )
+
+        self.mock_nlp.process.return_value = parsed
+        self.mock_fetch.return_value = passages
+        self.mock_bm25.retrieve.return_value = []
+        self.mock_vector.retrieve.return_value = []
+        self.mock_ranker.rank.return_value = []
+        self.mock_reader.extract.return_value = []
+        self.mock_scorer.score.return_value = answer_obj
+
+        # First call — indexing should happen.
+        self.pipeline.answer("test", verbose=False)
+        assert self.mock_bm25.index.call_count == 1
+        assert self.mock_vector.index_passages.call_count == 1
+
+        # Second call with identical passages — indexing must be skipped.
+        self.pipeline.answer("test", verbose=False)
+        assert self.mock_bm25.index.call_count == 1
+        assert self.mock_vector.index_passages.call_count == 1
+
+    def test_reindex_on_different_passages(self) -> None:
+        """index/index_passages must be called again when passages change."""
+        parsed = ParsedQuestion(
+            raw="test",
+            question_type="what",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=["test"],
+        )
+        answer_obj = FinalAnswer(
+            answer="ans", confidence=0.9, source="Wiki", url="http://e.com"
+        )
+        self.mock_nlp.process.return_value = parsed
+        self.mock_bm25.retrieve.return_value = []
+        self.mock_vector.retrieve.return_value = []
+        self.mock_ranker.rank.return_value = []
+        self.mock_reader.extract.return_value = []
+        self.mock_scorer.score.return_value = answer_obj
+
+        self.mock_fetch.return_value = [
+            Passage(text="first passage", source="A", url="http://a.com")
+        ]
+        self.pipeline.answer("q1", verbose=False)
+
+        self.mock_fetch.return_value = [
+            Passage(text="different passage", source="B", url="http://b.com")
+        ]
+        self.pipeline.answer("q2", verbose=False)
+
+        assert self.mock_bm25.index.call_count == 2
+        assert self.mock_vector.index_passages.call_count == 2

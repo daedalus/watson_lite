@@ -1,8 +1,10 @@
+import hashlib
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
-from watson_lite.core.models import FinalAnswer
+from watson_lite.core.models import FinalAnswer, Passage
 from watson_lite.core.nlp import NLPProcessor
 from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
@@ -10,6 +12,11 @@ from watson_lite.retrieval.bm25_retriever import BM25Retriever, fetch_wikipedia_
 from watson_lite.retrieval.vector_retriever import VectorRetriever
 
 logger = logging.getLogger(__name__)
+
+
+def _passages_hash(passages: list[Passage]) -> str:
+    """Return a compact hash that identifies a list of passages by content."""
+    return hashlib.md5("".join(p.text for p in passages).encode()).hexdigest()
 
 
 class WatsonLite:
@@ -22,7 +29,31 @@ class WatsonLite:
         self.ranker = Ranker()
         self.reader = ExtractiveReader()
         self.scorer = ConfidenceScorer()
+        self._last_passage_hash: str | None = None
         logger.info("All components loaded. Ready.")
+
+    def _retrieve_parallel(
+        self,
+        question: str,
+        passages: list[Passage],
+        needs_reindex: bool,
+    ) -> tuple[list[Passage], list[Passage]]:
+        """Run BM25 and vector retrieval in parallel, re-indexing only when needed."""
+
+        def _bm25_work() -> list[Passage]:
+            if needs_reindex:
+                self.bm25.index(passages)
+            return self.bm25.retrieve(question, top_k=20)
+
+        def _vector_work() -> list[Passage]:
+            if needs_reindex:
+                self.vector.index_passages(passages)
+            return self.vector.retrieve(question, top_k=20)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            bm25_future = executor.submit(_bm25_work)
+            vector_future = executor.submit(_vector_work)
+            return bm25_future.result(), vector_future.result()
 
     def answer(self, question: str, verbose: bool = True) -> FinalAnswer:
         if not question:
@@ -50,11 +81,13 @@ class WatsonLite:
                 url="",
             )
 
-        self.bm25.index(passages)
-        bm25_results = self.bm25.retrieve(question, top_k=20)
+        passage_hash = _passages_hash(passages)
+        needs_reindex = passage_hash != self._last_passage_hash
+        self._last_passage_hash = passage_hash
 
-        self.vector.index_passages(passages)
-        vector_results = self.vector.retrieve(question, top_k=20)
+        bm25_results, vector_results = self._retrieve_parallel(
+            question, passages, needs_reindex
+        )
 
         if verbose:
             logger.info("      BM25: %d passages", len(bm25_results))

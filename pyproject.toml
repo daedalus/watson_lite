@@ -72,18 +72,6 @@ strict = true
 warn_return_any = true
 warn_unused_ignores = true
 
-[[tool.mypy.overrides]]
-module = "watson_lite.graph.wikidata"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "watson_lite.retrieval.bm25_retriever"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "watson_lite.retrieval.vector_retriever"
-ignore_errors = true
-
 [tool.prospector]
 output-format = "text"
 strictness = "medium"

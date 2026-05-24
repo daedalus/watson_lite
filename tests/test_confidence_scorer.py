@@ -1,6 +1,6 @@
 import pytest
 
-from watson_lite.core.extractor import ConfidenceScorer
+from watson_lite.core.extractor import ConfidenceScorer, _question_type_bonus
 from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
 
 
@@ -102,3 +102,40 @@ class TestConfidenceScorer:
         ]
         result = self.scorer.score(candidates, [], "where")
         assert result.confidence_breakdown["passage_rank_signal"] == 0.5
+
+    def test_confidence_breakdown_includes_question_type_bonus(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="a",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        result = self.scorer.score(candidates, [], "where")
+        assert "question_type_bonus" in result.confidence_breakdown
+
+
+class TestQuestionTypeBonus:
+    def test_who_multi_word_capitalized(self) -> None:
+        assert _question_type_bonus("Gustave Eiffel", "who") == 0.1
+
+    def test_who_single_word(self) -> None:
+        assert _question_type_bonus("Paris", "who") == 0.0
+
+    def test_when_year(self) -> None:
+        assert _question_type_bonus("1889", "when") == 0.1
+
+    def test_when_month_year(self) -> None:
+        assert _question_type_bonus("March 1889", "when") == 0.1
+
+    def test_when_no_date(self) -> None:
+        assert _question_type_bonus("Gustave Eiffel", "when") == 0.0
+
+    def test_where_returns_zero(self) -> None:
+        assert _question_type_bonus("Paris", "where") == 0.0
+
+    def test_unknown_type(self) -> None:
+        assert _question_type_bonus("anything", "unknown") == 0.0

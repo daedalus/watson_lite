@@ -31,7 +31,7 @@ class TestWikidataGraph:
             "https://query.wikidata.org/sparql"
         )
         self.mock_sparql.addCustomHttpHeader.assert_called_once_with(
-            "User-Agent", "WatsonLite/1.0 (research project; python)"
+            "User-Agent", "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
         )
         self.mock_sparql.setReturnFormat.assert_called_once()
 
@@ -152,13 +152,56 @@ class TestWikidataGraph:
         facts = self.graph.get_entity_facts("Q243", max_facts=15)
         assert len(facts) == 1
         assert facts[0].value == "val1"
+        # P31 is in the static label map; confirm it is resolved.
+        assert facts[0].property_label == "instance of"
+        self.mock_cache.set.assert_called_once()
+
+    @patch("watson_lite.graph.wikidata.requests.get")
+    def test_get_entity_facts_unknown_property_uses_raw_id(
+        self, mock_get: MagicMock
+    ) -> None:
+        """Properties not in the static map should fall back to the raw PID."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "entities": {
+                "Q1": {
+                    "claims": {
+                        "P99999": [
+                            {
+                                "mainsnak": {
+                                    "snaktype": "value",
+                                    "datavalue": {"type": "string", "value": "x"},
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+        mock_get.return_value = mock_resp
+
+        facts = self.graph.get_entity_facts("Q1")
+        assert facts[0].property_label == "P99999"
+
+    @patch("watson_lite.graph.wikidata.requests.get")
+    def test_get_entity_facts_empty_claims_cached(self, mock_get: MagicMock) -> None:
+        """An entity with no claims must still be cached to avoid repeated requests."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"entities": {"Q999": {"claims": {}}}}
+        mock_get.return_value = mock_resp
+
+        facts = self.graph.get_entity_facts("Q999")
+        assert facts == []
+        # cache.set must be called even for empty results.
         self.mock_cache.set.assert_called_once()
 
     def test_get_entity_facts_cache_hit(self) -> None:
         cached = [
             {
                 "entity": "Q243",
-                "property_label": "P31",
+                "property_label": "instance of",
                 "value": "cached_val",
                 "value_type": "literal",
             }
@@ -299,7 +342,36 @@ class TestWikidataGraph:
         assert WikidataGraph._clean_entity_name("") == ""
 
     def test_get_related_entities(self) -> None:
+        # Cache miss → empty result (no extra network call).
         assert self.graph.get_related_entities("Q243") == []
+
+    def test_get_related_entities_with_cached_facts(self) -> None:
+        """Related entities are extracted from already-cached QID facts."""
+        self.mock_cache.get_or_sentinel.return_value = [
+            {
+                "entity": "Q243",
+                "property_label": "architect",
+                "value": "Q937",
+                "value_type": "wikibase-entityid",
+            },
+            {
+                "entity": "Q243",
+                "property_label": "location",
+                "value": "Paris",
+                "value_type": "string",
+            },
+        ]
+        related = self.graph.get_related_entities("Q243")
+        assert related == ["Q937"]
+
+    def test_get_related_entities_max_limited(self) -> None:
+        """max_related is honoured."""
+        self.mock_cache.get_or_sentinel.return_value = [
+            {"entity": "Q1", "property_label": "p", "value": f"Q{i}", "value_type": "wikibase-entityid"}
+            for i in range(20)
+        ]
+        related = self.graph.get_related_entities("Q1", max_related=3)
+        assert len(related) == 3
 
     def test_enrich_with_qid(self) -> None:
         with (
