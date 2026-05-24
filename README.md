@@ -20,6 +20,7 @@ python -m spacy download en_core_web_sm
 ```bash
 # Single question
 watson-lite "Who designed the Eiffel Tower?"
+watson-lite "Who was the 44th president of the United States?"
 
 # Interactive mode
 watson-lite
@@ -36,6 +37,25 @@ answer = watson.answer("Who designed the Eiffel Tower?")
 print(answer.answer)        # "Gustave Eiffel"
 print(answer.confidence)    # 0.847
 print(answer.source)        # "Eiffel Tower"
+```
+
+### Example output
+
+```
+$ watson-lite "Who was the 44th president of the United States?"
+
+  ANSWER:     Barack Hussein Obama
+  CONFIDENCE: 43.6%
+  SOURCE:     Barack Obama
+  URL:        https://en.wikipedia.org/wiki/Barack Obama
+
+  Confidence breakdown:
+    extraction_model: 0.592
+    span_agreement: 0.2
+    graph_corroboration: 0.0
+    passage_rank_signal: 1.0
+
+  Time: 44.60s
 ```
 
 ## API
