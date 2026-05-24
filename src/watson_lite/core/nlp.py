@@ -1,37 +1,20 @@
-"""
-core/nlp.py
-NLP Preprocessing — spaCy-based NER, coreference, POS, question classification.
-No LLM involved. All rule-based.
-"""
-
 import spacy
-from dataclasses import dataclass, field
-from typing import List, Optional
+from spacy.tokens import Doc
 
-# Question types Watson-style
+from watson_lite.core.models import ParsedQuestion
+
 QUESTION_TYPES = {
-    "who":   ["who", "whose", "whom"],
-    "what":  ["what", "which"],
-    "when":  ["when"],
+    "who": ["who", "whose", "whom"],
+    "what": ["what", "which"],
+    "when": ["when"],
     "where": ["where"],
-    "how":   ["how"],
-    "why":   ["why"],
+    "how": ["how"],
+    "why": ["why"],
 }
 
 
-@dataclass
-class ParsedQuestion:
-    raw: str
-    question_type: str                  # who / what / when / where / how / why / unknown
-    entities: List[dict]                # [{text, label, start, end}]
-    noun_chunks: List[str]
-    root_verb: Optional[str]
-    sub_questions: List[str] = field(default_factory=list)
-    keywords: List[str] = field(default_factory=list)
-
-
 class NLPProcessor:
-    def __init__(self, model: str = "en_core_web_sm"):
+    def __init__(self, model: str = "en_core_web_sm") -> None:
         print(f"[NLP] Loading spaCy model: {model}")
         self.nlp = spacy.load(model)
 
@@ -42,14 +25,18 @@ class NLPProcessor:
                 return qtype
         return "unknown"
 
-    def extract_entities(self, doc) -> List[dict]:
+    def extract_entities(self, doc: Doc) -> list[dict[str, str | int]]:
         return [
-            {"text": ent.text, "label": ent.label_, "start": ent.start_char, "end": ent.end_char}
+            {
+                "text": ent.text,
+                "label": ent.label_,
+                "start": ent.start_char,
+                "end": ent.end_char,
+            }
             for ent in doc.ents
         ]
 
-    def extract_keywords(self, doc) -> List[str]:
-        """Extract meaningful tokens: nouns, proper nouns, verbs (non-stop)."""
+    def extract_keywords(self, doc: Doc) -> list[str]:
         return [
             token.lemma_.lower()
             for token in doc
@@ -59,21 +46,16 @@ class NLPProcessor:
             and len(token.text) > 2
         ]
 
-    def get_root_verb(self, doc) -> Optional[str]:
+    def get_root_verb(self, doc: Doc) -> str | None:
         for token in doc:
             if token.dep_ == "ROOT" and token.pos_ == "VERB":
-                return token.lemma_
+                return str(token.lemma_)
         return None
 
-    def decompose_question(self, text: str) -> List[str]:
-        """
-        Rule-based decomposition using conjunctions and punctuation.
-        e.g. "Who built the Eiffel Tower and when was it built?"
-          -> ["Who built the Eiffel Tower", "when was it built"]
-        """
+    def decompose_question(self, text: str) -> list[str]:
         doc = self.nlp(text)
-        sub_questions = []
-        current = []
+        sub_questions: list[str] = []
+        current: list[str] = []
 
         for token in doc:
             if token.text in ("and", "but", "or", "?") and current:
@@ -102,14 +84,3 @@ class NLPProcessor:
             sub_questions=self.decompose_question(question),
             keywords=self.extract_keywords(doc),
         )
-
-
-if __name__ == "__main__":
-    processor = NLPProcessor()
-    q = "Who built the Eiffel Tower and when was it completed?"
-    result = processor.process(q)
-    print(f"Type:      {result.question_type}")
-    print(f"Entities:  {result.entities}")
-    print(f"Keywords:  {result.keywords}")
-    print(f"Sub-Qs:    {result.sub_questions}")
-    print(f"Root verb: {result.root_verb}")

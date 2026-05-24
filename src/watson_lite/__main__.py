@@ -1,19 +1,15 @@
-"""
-cli.py
-Interactive command-line interface for WatsonLite.
-"""
-
 import sys
-from pipeline import WatsonLite
+
+from watson_lite.pipeline import WatsonLite
 
 
-def main():
+def main() -> int:
     watson = WatsonLite()
 
     if len(sys.argv) > 1:
         question = " ".join(sys.argv[1:])
         watson.answer(question, verbose=True)
-        return
+        return 0
 
     print("""
 ╔══════════════════════════════════════╗
@@ -29,7 +25,7 @@ Type 'quit' or Ctrl+C to exit.
             question = input("\n❓ Question: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye.")
-            sys.exit(0)
+            return 0
 
         if not question:
             continue
@@ -39,6 +35,8 @@ Type 'quit' or Ctrl+C to exit.
 
         watson.answer(question, verbose=True)
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

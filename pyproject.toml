@@ -1,0 +1,120 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watson-lite"
+version = "0.1.0"
+description = "Extractive QA pipeline — no LLM, no training. BM25 + FAISS + Wikidata + cross-encoder re-ranking + roberta-base-squad2."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Dario Clavijo", email = "clavijodario@gmail.com"}
+]
+dependencies = [
+    "spacy>=3.7.0",
+    "bm25s>=0.1.0",
+    "faiss-cpu>=1.7.4",
+    "sentence-transformers>=2.7.0",
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
+    "SPARQLWrapper>=2.0.0",
+    "wikipedia-api>=0.6.0",
+    "requests>=2.31.0",
+    "numpy>=1.26.0",
+    "scipy>=1.13.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "hatch",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+lint = [
+    "prospector[with_ruff,with_mypy]",
+]
+all = ["watson-lite[dev,test,lint]"]
+
+[project.urls]
+Homepage = "https://github.com/daedalus/watson_lite"
+Repository = "https://github.com/daedalus/watson_lite"
+Issues = "https://github.com/daedalus/watson_lite/issues"
+
+[project.scripts]
+watson-lite = "watson_lite.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watson_lite"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/watson_lite"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "ANN", "TCH", "N", "C4", "ARG"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "watson_lite.graph.wikidata"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "watson_lite.retrieval.bm25_retriever"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "watson_lite.retrieval.vector_retriever"
+ignore_errors = true
+
+[tool.prospector]
+output-format = "text"
+strictness = "medium"
+test-warnings = false
+
+[tool.pylint.MESSAGES_CONTROL]
+disable = ["too-many-locals", "no-value-for-parameter"]
+
+[tool.prospector.tools]
+ruff = true
+mypy = true
+pylint = true
+pyflakes = false
+pycodestyle = false
+mccabe = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --cov=src --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude = ["tests/*", "*/__init__.py"]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

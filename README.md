@@ -1,70 +1,34 @@
-# WatsonLite
+# watson-lite
 
 A Watson-inspired extractive QA system that runs on a laptop.  
 **No LLM. No trained weights of your own. No paid APIs.**
 
----
+[![Python](https://img.shields.io/pypi/pyversions/watson-lite.svg)](https://pypi.org/project/watson-lite/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/master/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-## Architecture
-
-```
-User Question
-      ↓
-NLP Preprocessing         (spaCy — NER, POS, dependency parse, question type)
-      ↓
-Rule-Based Decomposition  (conjunctions → sub-questions)
-      ↓
-Entity Extraction         (spaCy NER → Wikidata entity linking)
-      ↓
-┌─────────────────────────────────┐
-│  PARALLEL RETRIEVAL             │
-│  BM25 (Wikipedia REST API)      │
-│  Vector (FAISS + MiniLM embeds) │
-└────────────────┬────────────────┘
-                 ↓
-Candidate Extraction      (merge + dedup)
-                 ↓
-Graph Enrichment          (Wikidata SPARQL — free, no key)
-                 ↓
-RRF Fusion                (Reciprocal Rank Fusion — no training)
-                 ↓
-Cross-Encoder Rerank      (ms-marco-MiniLM — pretrained, inference only)
-                 ↓
-Multi-Hypothesis Extraction (roberta-base-squad2 — span extraction, no generation)
-                 ↓
-Confidence Scoring        (extraction score + agreement + graph corroboration)
-                 ↓
-Final Answer + Confidence Score
-```
-
----
-
-## Setup
+## Install
 
 ```bash
-# 1. Create virtual environment
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Download spaCy model
+pip install watson-lite
 python -m spacy download en_core_web_sm
 ```
 
----
-
 ## Usage
 
-### Interactive CLI
+### CLI
+
 ```bash
-python cli.py
+# Single question
+watson-lite "Who designed the Eiffel Tower?"
+
+# Interactive mode
+watson-lite
 ```
 
-### Programmatic
+### Python
+
 ```python
-from pipeline import WatsonLite
+from watson_lite import WatsonLite
 
 watson = WatsonLite()
 answer = watson.answer("Who designed the Eiffel Tower?")
@@ -72,36 +36,47 @@ answer = watson.answer("Who designed the Eiffel Tower?")
 print(answer.answer)        # "Gustave Eiffel"
 print(answer.confidence)    # 0.847
 print(answer.source)        # "Eiffel Tower"
-print(answer.graph_facts)   # ["architect: Gustave Eiffel", ...]
 ```
 
-### Run example questions
+## API
+
+- **`WatsonLite`** — Main orchestrator. `answer(question)` runs the full 6-stage pipeline.
+- **`NLPProcessor`** — spaCy-based question classification, NER, decomposition.
+- **`BM25Retriever`** — BM25 retrieval over Wikipedia REST API.
+- **`VectorRetriever`** — Dense vector retrieval (sentence-transformers + FAISS).
+- **`WikidataGraph`** — Structured fact enrichment from Wikidata.
+- **`Ranker`** — RRF fusion + cross-encoder re-ranking.
+- **`ExtractiveReader`** — Span extraction via roberta-base-squad2.
+- **`ConfidenceScorer`** — Multi-signal confidence scoring.
+- **`Cache`** — SQLite3 cache for Wikipedia and Wikidata responses.
+
+## Development
+
 ```bash
-python pipeline.py
+git clone https://github.com/daedalus/watson_lite.git
+cd watson_lite
+pip install -e ".[test]"
+
+# run tests
+pytest
+
+# format
+ruff format src/ tests/
+
+# lint + type check
+prospector --with-tool ruff --with-tool mypy src/
+
+# find unused code
+vulture --min-confidence 90 src/
 ```
 
----
-
-## Project Structure
+## Architecture
 
 ```
-watson_lite/
-├── requirements.txt
-├── pipeline.py          ← main orchestrator
-├── cli.py               ← interactive CLI
-├── core/
-│   ├── nlp.py           ← spaCy preprocessing + question classification
-│   └── extractor.py     ← extractive QA + confidence scoring
-├── retrieval/
-│   ├── bm25_retriever.py   ← BM25 over Wikipedia REST API
-│   └── vector_retriever.py ← FAISS + sentence-transformers
-├── graph/
-│   └── wikidata.py      ← Wikidata SPARQL enrichment
-└── ranking/
-    └── ranker.py        ← RRF fusion + cross-encoder reranking
+User Question → NLP (spaCy) → Decomposition → Entity Extraction
+  → Parallel Retrieval (BM25 + FAISS) → Graph (Wikidata)
+  → RRF Fusion → Cross-Encoder Rerank → Span Extraction → Confidence Score
 ```
-
----
 
 ## Models Used (all pretrained, inference only)
 
@@ -112,21 +87,15 @@ watson_lite/
 | `ms-marco-MiniLM-L-6-v2` | Cross-encoder reranking | ~90MB |
 | `deepset/roberta-base-squad2` | Extractive span QA | ~480MB |
 
-Total: ~670MB downloaded once, runs CPU-only.
+Total: ~670MB — runs CPU-only.
 
----
+## Data Sources
 
-## Data Sources (all free, no API key)
-
-| Source | Use |
-|---|---|
-| Wikipedia REST API | Live article retrieval |
-| Wikidata SPARQL | Structured entity facts |
-
----
+- **Wikipedia REST API** — Live article retrieval
+- **Wikidata REST API** — Structured entity facts (no SPARQL)
 
 ## Extending
 
-- **Add a domain corpus**: Replace `fetch_wikipedia_passages()` with your own document loader and re-index with FAISS.
-- **Add more graph sources**: DBpedia SPARQL endpoint uses the same `SPARQLWrapper` pattern.
-- **Offline mode**: Download Wikipedia dumps and index locally with BM25s + FAISS for fully offline operation.
+- **Add a domain corpus**: Replace `fetch_wikipedia_passages()` with your own document loader.
+- **Add more graph sources**: Wikidata REST API pattern is reusable.
+- **Offline mode**: Download Wikipedia dumps and index locally with BM25 + FAISS.

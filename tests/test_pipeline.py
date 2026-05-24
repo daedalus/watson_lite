@@ -1,0 +1,204 @@
+import pytest
+from unittest.mock import MagicMock, patch
+
+from watson_lite.core.models import (
+    AnswerCandidate,
+    FinalAnswer,
+    ParsedQuestion,
+    Passage,
+    RankedPassage,
+)
+from watson_lite.pipeline import WatsonLite
+
+
+class TestWatsonLite:
+    def setup_method(self) -> None:
+        self.patches = [
+            patch("watson_lite.pipeline.NLPProcessor"),
+            patch("watson_lite.pipeline.BM25Retriever"),
+            patch("watson_lite.pipeline.VectorRetriever"),
+            patch("watson_lite.pipeline.WikidataGraph"),
+            patch("watson_lite.pipeline.Ranker"),
+            patch("watson_lite.pipeline.ExtractiveReader"),
+            patch("watson_lite.pipeline.ConfidenceScorer"),
+        ]
+        self.mocks = [p.start() for p in self.patches]
+
+        self.mock_nlp_cls, self.mock_bm25_cls, self.mock_vector_cls = (
+            self.mocks[0],
+            self.mocks[1],
+            self.mocks[2],
+        )
+        self.mock_graph_cls, self.mock_ranker_cls = (
+            self.mocks[3],
+            self.mocks[4],
+        )
+        self.mock_reader_cls, self.mock_scorer_cls = (
+            self.mocks[5],
+            self.mocks[6],
+        )
+
+        self.mock_nlp = MagicMock()
+        self.mock_nlp_cls.return_value = self.mock_nlp
+        self.mock_bm25 = MagicMock()
+        self.mock_bm25_cls.return_value = self.mock_bm25
+        self.mock_vector = MagicMock()
+        self.mock_vector_cls.return_value = self.mock_vector
+        self.mock_graph = MagicMock()
+        self.mock_graph_cls.return_value = self.mock_graph
+        self.mock_ranker = MagicMock()
+        self.mock_ranker_cls.return_value = self.mock_ranker
+        self.mock_reader = MagicMock()
+        self.mock_reader_cls.return_value = self.mock_reader
+        self.mock_scorer = MagicMock()
+        self.mock_scorer_cls.return_value = self.mock_scorer
+
+        self.fetch_patcher = patch(
+            "watson_lite.pipeline.fetch_wikipedia_passages"
+        )
+        self.mock_fetch = self.fetch_patcher.start()
+
+        self.pipeline = WatsonLite()
+
+    def teardown_method(self) -> None:
+        for p in self.patches:
+            p.stop()
+        self.fetch_patcher.stop()
+
+    def test_constructor_initializes_all_components(self) -> None:
+        self.mock_nlp_cls.assert_called_once()
+        self.mock_bm25_cls.assert_called_once()
+        self.mock_vector_cls.assert_called_once()
+        self.mock_graph_cls.assert_called_once()
+        self.mock_ranker_cls.assert_called_once()
+        self.mock_reader_cls.assert_called_once()
+        self.mock_scorer_cls.assert_called_once()
+
+    def test_empty_question_raises(self) -> None:
+        with pytest.raises(ValueError, match="must not be empty"):
+            self.pipeline.answer("")
+
+    def test_answer_no_passages(self) -> None:
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="test",
+            question_type="what",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=["test"],
+        )
+        self.mock_fetch.return_value = []
+
+        result = self.pipeline.answer("test question")
+        assert result.answer == "Could not retrieve relevant passages."
+        assert result.confidence == 0.0
+
+    def test_answer_full_success(self) -> None:
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="Who designed the Eiffel Tower?",
+            question_type="who",
+            entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 5}],
+            noun_chunks=["the Eiffel Tower"],
+            root_verb="design",
+            sub_questions=["Who designed the Eiffel Tower?"],
+            keywords=["design", "Eiffel", "Tower"],
+        )
+
+        test_passages = [
+            Passage(
+                text="Gustave Eiffel designed the tower.",
+                source="Wikipedia",
+                url="http://example.com",
+            )
+        ]
+        self.mock_fetch.return_value = test_passages
+
+        self.mock_bm25.retrieve.return_value = test_passages
+        self.mock_vector.retrieve.return_value = test_passages
+        self.mock_graph.enrich_all.return_value = []
+
+        ranked = [
+            RankedPassage(
+                passage=test_passages[0],
+                rrf_score=0.5,
+                cross_score=0.9,
+                final_score=0.9,
+                rank=1,
+            )
+        ]
+        self.mock_ranker.rank.return_value = ranked
+
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="Wikipedia",
+                url="http://example.com",
+                passage="Gustave Eiffel designed the tower.",
+                extraction_score=0.95,
+                rank=1,
+            )
+        ]
+        self.mock_reader.extract.return_value = candidates
+
+        expected_answer = FinalAnswer(
+            answer="Gustave Eiffel",
+            confidence=0.85,
+            source="Wikipedia",
+            url="http://example.com",
+            supporting_passages=["Gustave Eiffel designed the tower."],
+            graph_facts=["architect: Gustave Eiffel"],
+            confidence_breakdown={
+                "extraction_model": 0.95,
+                "span_agreement": 0.333,
+                "graph_corroboration": 0.2,
+                "passage_rank_signal": 1.0,
+            },
+        )
+        self.mock_scorer.score.return_value = expected_answer
+
+        result = self.pipeline.answer("Who designed the Eiffel Tower?")
+
+        assert result.answer == "Gustave Eiffel"
+        assert result.confidence == 0.85
+        self.mock_nlp.process.assert_called_once()
+        self.mock_fetch.assert_called_once()
+        self.mock_bm25.index.assert_called_once_with(test_passages)
+        self.mock_bm25.retrieve.assert_called_once()
+        self.mock_vector.index_passages.assert_called_once_with(test_passages)
+        self.mock_vector.retrieve.assert_called_once()
+        self.mock_graph.enrich_all.assert_called_once()
+        self.mock_ranker.rank.assert_called_once()
+        self.mock_reader.extract.assert_called_once()
+        self.mock_scorer.score.assert_called_once()
+
+    def test_answer_verbose_false(self) -> None:
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="test",
+            question_type="what",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=["test"],
+        )
+        self.mock_fetch.return_value = [
+            Passage(
+                text="test text",
+                source="Wiki",
+                url="http://e.com",
+            )
+        ]
+        self.mock_bm25.retrieve.return_value = []
+        self.mock_vector.retrieve.return_value = []
+        self.mock_ranker.rank.return_value = []
+        self.mock_reader.extract.return_value = []
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="No answer found",
+            confidence=0.0,
+            source="",
+            url="",
+        )
+
+        result = self.pipeline.answer("test", verbose=False)
+        assert result.answer == "No answer found"
