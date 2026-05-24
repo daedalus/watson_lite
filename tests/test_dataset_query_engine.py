@@ -49,7 +49,7 @@ class TestDatasetQueryEngine:
         assert result == []
         wiki_fetcher.assert_called_once_with("python", top_k=5)
 
-    def test_isolates_failing_provider(self) -> None:
+    def test_continues_querying_after_provider_failure(self) -> None:
         broken_fetcher = MagicMock(side_effect=RuntimeError("boom"))
         wiki_fetcher = MagicMock(
             return_value=[

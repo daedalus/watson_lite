@@ -24,7 +24,7 @@ WIKI_HEADERS = {
 def fetch_mediawiki_passages(
     query: str,
     *,
-    top_k: int,
+    top_k: int = WIKI_SEARCH_LIMIT,
     api_url: str,
     article_base_url: str,
     cache_namespace: str,
