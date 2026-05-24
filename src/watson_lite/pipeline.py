@@ -17,8 +17,8 @@ from watson_lite.retrieval.bm25_retriever import (
     fetch_wikipedia_passages,
 )
 from watson_lite.retrieval.dataset_query_engine import (
+    DatasetProvider,
     DatasetQueryEngine,
-    FunctionDatasetProvider,
 )
 from watson_lite.retrieval.query_formulation import generate_search_queries
 from watson_lite.retrieval.vector_retriever import VectorRetriever
@@ -41,8 +41,8 @@ class WatsonLite:
         self.vector = VectorRetriever()
         self.dataset_query_engine = DatasetQueryEngine(
             providers=(
-                FunctionDatasetProvider("wikipedia", fetch_wikipedia_passages),
-                FunctionDatasetProvider("wikibooks", fetch_wikibooks_passages),
+                DatasetProvider("wikipedia", fetch_wikipedia_passages),
+                DatasetProvider("wikibooks", fetch_wikibooks_passages),
             ),
             enabled_datasets=self.config.dataset_sources,
         )

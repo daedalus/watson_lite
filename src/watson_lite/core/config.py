@@ -35,7 +35,7 @@ class FeatureConfig:
         )
 
     def with_feature(self, name: str, enabled: bool) -> FeatureConfig:
-        return replace(self, **{name: enabled})
+        return replace(self, **{name: enabled})  # type: ignore[arg-type]
 
 
 OPTIONAL_FEATURES = (

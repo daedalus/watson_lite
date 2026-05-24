@@ -2,31 +2,30 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from watson_lite.core.models import Passage
+if TYPE_CHECKING:
+    from watson_lite.core.models import Passage
 
 logger = logging.getLogger(__name__)
 
 
-class DatasetProvider(Protocol):
-    """Queryable dataset provider used by the dataset query engine."""
+class PassageFetcher(Protocol):
+    """Callable used by dataset providers."""
 
-    name: str
-
-    def fetch_passages(self, query: str, top_k: int) -> list[Passage]:
-        """Return passages for a query from one dataset."""
+    def __call__(self, query: str, *, top_k: int) -> list[Passage]:
+        """Fetch passages from one dataset."""
 
 
 @dataclass(frozen=True)
-class FunctionDatasetProvider:
-    """Adapter that turns a function into a dataset provider."""
+class DatasetProvider:
+    """Dataset provider adapter with a stable name and fetch implementation."""
 
     name: str
-    fetcher: Callable[[str, int], list[Passage]]
+    fetcher: PassageFetcher
 
     def fetch_passages(self, query: str, top_k: int) -> list[Passage]:
-        return self.fetcher(query, top_k)
+        return self.fetcher(query, top_k=top_k)
 
 
 class DatasetQueryEngine:
