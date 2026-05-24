@@ -113,9 +113,5 @@ class TestKPIEvaluation:
         assert report.confidence_calibration_ece is not None
 
     def test_requires_non_empty_answers(self) -> None:
-        try:
+        with pytest.raises(ValueError, match="must not be empty"):
             evaluate_kpis([])
-        except ValueError as exc:
-            assert "must not be empty" in str(exc)
-        else:
-            raise AssertionError("Expected ValueError for empty answers")

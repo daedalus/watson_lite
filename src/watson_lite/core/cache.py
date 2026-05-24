@@ -88,7 +88,7 @@ class Cache:
         )
 
     @staticmethod
-    def _unwrap(raw: str) -> object:
+    def _unwrap(raw: str) -> Any:  # noqa: ANN401
         wrapped = json.loads(raw)
         if isinstance(wrapped, dict) and "v" in wrapped:
             return wrapped["v"]

@@ -13,6 +13,8 @@ _FALLBACK_ANSWERS = {
     "no answer found",
     "could not retrieve relevant passages.",
 }
+_P50_INDEX = 49
+_P95_INDEX = 94
 
 
 @dataclass
@@ -129,8 +131,8 @@ def _latency_percentiles(answers: list[FinalAnswer]) -> tuple[float, float]:
         return 0.0, 0.0
     if len(latencies) == 1:
         return latencies[0], latencies[0]
-    p50 = statistics.quantiles(latencies, n=100, method="inclusive")[49]
-    p95 = statistics.quantiles(latencies, n=100, method="inclusive")[94]
+    p50 = statistics.quantiles(latencies, n=100, method="inclusive")[_P50_INDEX]
+    p95 = statistics.quantiles(latencies, n=100, method="inclusive")[_P95_INDEX]
     return p50, p95
 
 
