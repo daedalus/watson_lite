@@ -28,6 +28,9 @@ watson-lite
 # Toggle optional features (ablation-style)
 watson-lite --no-vector-retrieval --no-graph-enrichment "Who designed the Eiffel Tower?"
 
+# Query across multiple online datasets
+watson-lite --datasets wikipedia,wikibooks "What is Python?"
+
 # Benchmark/eval run from dataset
 watson-lite \
   --benchmark-dataset /path/to/benchmark.json \
@@ -123,7 +126,8 @@ $ watson-lite "Who was the 44th president of the United States?"
 
 - **`WatsonLite`** — Main orchestrator. `answer(question)` runs the full 6-stage pipeline.
 - **`NLPProcessor`** — spaCy-based question classification, NER, decomposition.
-- **`BM25Retriever`** — BM25 retrieval over Wikipedia REST API.
+- **`DatasetQueryEngine`** — Modular dataset querying and aggregation across pluggable providers.
+- **`BM25Retriever`** — BM25 retrieval over aggregated online passages.
 - **`VectorRetriever`** — Dense vector retrieval (sentence-transformers + FAISS).
 - **`WikidataGraph`** — Structured fact enrichment from Wikidata.
 - **`Ranker`** — RRF fusion + cross-encoder re-ranking.
@@ -135,7 +139,7 @@ $ watson-lite "Who was the 44th president of the United States?"
 
 Core (always on):
 - NLP parse
-- Wikipedia fetch
+- Dataset query engine fetch
 - BM25 retrieve
 - Span extraction
 - Final scoring shell
@@ -190,10 +194,11 @@ Total: ~670MB — runs CPU-only.
 ## Data Sources
 
 - **Wikipedia REST API** — Live article retrieval
+- **Wikibooks REST API** — Live educational content retrieval
 - **Wikidata REST API** — Structured entity facts (no SPARQL)
 
 ## Extending
 
-- **Add a domain corpus**: Replace `fetch_wikipedia_passages()` with your own document loader.
+- **Add a domain corpus**: Plug a new provider into `DatasetQueryEngine`.
 - **Add more graph sources**: Wikidata REST API pattern is reusable.
 - **Offline mode**: Download Wikipedia dumps and index locally with BM25 + FAISS.

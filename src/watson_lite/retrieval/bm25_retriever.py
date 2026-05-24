@@ -12,6 +12,7 @@ from watson_lite.core.models import Passage
 logger = logging.getLogger(__name__)
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
+WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
 CHUNK_SIZE = 200
 _NEGATIVE_CACHE_TTL_SECONDS = 300
@@ -20,11 +21,17 @@ WIKI_HEADERS = {
 }
 
 
-def fetch_wikipedia_passages(
-    query: str, top_k: int = WIKI_SEARCH_LIMIT
+def fetch_mediawiki_passages(
+    query: str,
+    *,
+    top_k: int = WIKI_SEARCH_LIMIT,
+    api_url: str,
+    article_base_url: str,
+    cache_namespace: str,
 ) -> list[Passage]:
+    """Fetch and chunk passages from a MediaWiki API-backed dataset."""
     cache = get_cache()
-    cache_key = f"wiki:passages:{query.lower().strip()}"
+    cache_key = f"{cache_namespace}:passages:{query.lower().strip()}"
     cached = cache.get_or_sentinel(cache_key)
     if not is_cache_miss(cached):
         logger.debug("Cache hit: %s", cache_key)
@@ -40,11 +47,11 @@ def fetch_wikipedia_passages(
     }
     try:
         resp = requests.get(
-            WIKI_API, params=search_params, headers=WIKI_HEADERS, timeout=10
+            api_url, params=search_params, headers=WIKI_HEADERS, timeout=10
         )
         results = resp.json().get("query", {}).get("search", [])
     except Exception as e:
-        logger.warning("Wikipedia search error: %s", e)
+        logger.warning("Dataset search error (%s): %s", cache_namespace, e)
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
@@ -58,7 +65,7 @@ def fetch_wikipedia_passages(
         }
         try:
             eresp = requests.get(
-                WIKI_API, params=extract_params, headers=WIKI_HEADERS, timeout=10
+                api_url, params=extract_params, headers=WIKI_HEADERS, timeout=10
             )
             pages = eresp.json().get("query", {}).get("pages", {})
             chunks: list[Passage] = []
@@ -75,7 +82,9 @@ def fetch_wikipedia_passages(
                         Passage(
                             text=chunk,
                             source=title,
-                            url=f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}",
+                            url=(
+                                f"{article_base_url}/{title.replace(' ', '_')}"
+                            ),
                         )
                     )
             return chunks
@@ -94,6 +103,32 @@ def fetch_wikipedia_passages(
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
     return passages
+
+
+def fetch_wikipedia_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from Wikipedia using the generic MediaWiki fetcher."""
+    return fetch_mediawiki_passages(
+        query,
+        top_k=top_k,
+        api_url=WIKI_API,
+        article_base_url="https://en.wikipedia.org/wiki",
+        cache_namespace="wiki",
+    )
+
+
+def fetch_wikibooks_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from Wikibooks using the generic MediaWiki fetcher."""
+    return fetch_mediawiki_passages(
+        query,
+        top_k=top_k,
+        api_url=WIKIBOOKS_API,
+        article_base_url="https://en.wikibooks.org/wiki",
+        cache_namespace="wikibooks",
+    )
 
 
 class BM25Retriever:
