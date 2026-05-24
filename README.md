@@ -73,7 +73,7 @@ $ watson-lite "Who was the 44th president of the United States?"
 ## Development
 
 ```bash
-git clone https://github.com/daedalus/watson_lite.git
+git clone https://github.com/daedalus/watson-lite.git
 cd watson_lite
 pip install -e ".[test]"
 

@@ -18,4 +18,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLite3 cache for Wikipedia and Wikidata responses
 - Interactive CLI and single-shot CLI modes
 
-[0.1.0]: https://github.com/daedalus/watson_lite/releases/tag/v0.1.0
+[0.1.0]: https://github.com/daedalus/watson-lite/releases/tag/v0.1.0

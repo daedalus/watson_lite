@@ -42,9 +42,9 @@ lint = [
 all = ["watson-lite[dev,test,lint]"]
 
 [project.urls]
-Homepage = "https://github.com/daedalus/watson_lite"
-Repository = "https://github.com/daedalus/watson_lite"
-Issues = "https://github.com/daedalus/watson_lite/issues"
+Homepage = "https://github.com/daedalus/watson-lite"
+Repository = "https://github.com/daedalus/watson-lite"
+Issues = "https://github.com/daedalus/watson-lite/issues"
 
 [project.scripts]
 watson-lite = "watson_lite.__main__:main"
