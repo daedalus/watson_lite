@@ -1,8 +1,13 @@
+import copy
+import logging
+
 import bm25s
 import requests
 
 from watson_lite.core.cache import get_cache
 from watson_lite.core.models import Passage
+
+logger = logging.getLogger(__name__)
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
@@ -19,7 +24,7 @@ def fetch_wikipedia_passages(
     cache_key = f"wiki:passages:{query.lower().strip()}"
     cached = cache.get(cache_key)
     if cached is not None:
-        print(f"[Cache] Hit: {cache_key}")
+        logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
     search_params = {
@@ -36,7 +41,7 @@ def fetch_wikipedia_passages(
         )
         results = resp.json().get("query", {}).get("search", [])
     except Exception as e:
-        print(f"[BM25] Wikipedia search error: {e}")
+        logger.warning("Wikipedia search error: %s", e)
         return []
 
     passages = []
@@ -46,7 +51,6 @@ def fetch_wikipedia_passages(
             "action": "query",
             "titles": title,
             "prop": "extracts",
-            "exintro": False,
             "explaintext": True,
             "format": "json",
         }
@@ -72,10 +76,10 @@ def fetch_wikipedia_passages(
                         )
                     )
         except Exception as e:
-            print(f"[BM25] Extract error for '{title}': {e}")
+            logger.warning("Extract error for '%s': %s", title, e)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
-    print(f"[Cache] Set: {cache_key} ({len(passages)} passages)")
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
     return passages
 
 
@@ -91,12 +95,11 @@ class BM25Retriever:
         retriever = bm25s.BM25(corpus=corpus)
         retriever.index(tokenized)
         self.retriever = retriever
-        print(f"[BM25] Indexed {len(passages)} passages")
+        logger.debug("Indexed %d passages", len(passages))
 
     def retrieve(self, query: str, top_k: int = 10) -> list[Passage]:
         if not self.retriever or not self.passages:
             return []
-        assert self.retriever is not None  # narrowed by guard above
 
         tokenized_query = bm25s.tokenize([query], stopwords="en")
         docs, scores = self.retriever.retrieve(
@@ -108,6 +111,9 @@ class BM25Retriever:
         for doc_text, score in zip(docs[0], scores[0]):
             p = text_to_passage.get(doc_text)
             if p:
+                # Copy so that concurrent retrievers don't overwrite each
+                # other's score/rank on the shared Passage object.
+                p = copy.copy(p)
                 p.score = float(score)
                 retrieved.append(p)
 
@@ -117,7 +123,7 @@ class BM25Retriever:
         return retrieved
 
     def fetch_and_retrieve(self, query: str, top_k: int = 10) -> list[Passage]:
-        print(f"[BM25] Fetching Wikipedia for: '{query}'")
+        logger.debug("Fetching Wikipedia for: '%s'", query)
         passages = fetch_wikipedia_passages(query)
         if not passages:
             return []

@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from watson_lite.core.cache import _SENTINEL
+from watson_lite.core.models import EntityFact, GraphResult
 from watson_lite.graph.wikidata import WikidataGraph
-from watson_lite.core.models import EntityFact
 
 
 class TestWikidataGraph:
@@ -15,7 +16,8 @@ class TestWikidataGraph:
         self.cache_patcher = patch("watson_lite.graph.wikidata.get_cache")
         self.mock_get_cache = self.cache_patcher.start()
         self.mock_cache = MagicMock()
-        self.mock_cache.get.return_value = None
+        # Default: every key is a cache miss.
+        self.mock_cache.get_or_sentinel.return_value = _SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
 
         self.graph = WikidataGraph()
@@ -34,7 +36,7 @@ class TestWikidataGraph:
         self.mock_sparql.setReturnFormat.assert_called_once()
 
     def test_find_entity_id_cache_hit(self) -> None:
-        self.mock_cache.get.return_value = "Q243"
+        self.mock_cache.get_or_sentinel.return_value = "Q243"
         qid = self.graph.find_entity_id("Eiffel Tower")
         assert qid == "Q243"
 
@@ -126,6 +128,18 @@ class TestWikidataGraph:
         qid = self.graph._find_entity_id_sparql("Nonexistent")
         assert qid is None
 
+    def test_find_entity_id_sparql_escapes_quotes(self) -> None:
+        """Entity names containing quotes must not break the SPARQL query."""
+        self.mock_sparql.setQuery.reset_mock()
+        self.mock_sparql.query.return_value.convert.return_value = {
+            "results": {"bindings": []}
+        }
+        # Should not raise; the quote must be escaped in the generated query.
+        qid = self.graph._find_entity_id_sparql('O"Brien')
+        assert qid is None
+        called_query: str = self.mock_sparql.setQuery.call_args[0][0]
+        assert '\\"' in called_query
+
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_get_entity_facts_success(self, mock_get: MagicMock) -> None:
         mock_resp = MagicMock()
@@ -165,7 +179,7 @@ class TestWikidataGraph:
                 "value_type": "literal",
             }
         ]
-        self.mock_cache.get.return_value = cached
+        self.mock_cache.get_or_sentinel.return_value = cached
 
         facts = self.graph.get_entity_facts("Q243")
         assert len(facts) == 1
@@ -383,30 +397,25 @@ class TestWikidataGraph:
         assert len(rows) == 1
 
     def test_run_query_429_retry_then_success(self) -> None:
-        self.mock_sparql.setQuery.reset_mock()
-        http_error_429 = __import__(
-            "urllib.error", fromlist=["HTTPError"]
-        ).HTTPError(
-            "url", 429, "Too Many", {}, None
-        )
-        self.mock_sparql.query.side_effect = [
-            http_error_429,
-            MagicMock(),
-        ]
-        real_convert = MagicMock(
-            return_value={
-                "results": {"bindings": [{"item": {"value": "Q1"}}]}
-            }
-        )
-        self.mock_sparql.query.return_value = MagicMock()
-        # Need to handle side_effect carefully
-        # Actually let's just test the exception path without retry
+        """A single 429 followed by a success should return results."""
+        from urllib.error import HTTPError as _HTTPError
+
+        http_error_429 = _HTTPError("url", 429, "Too Many", {}, None)
+        success_result = MagicMock()
+        success_result.convert.return_value = {
+            "results": {"bindings": [{"item": {"value": "Q1"}}]}
+        }
+        self.mock_sparql.query.side_effect = [http_error_429, success_result]
+
+        rows = self.graph._run_query("SELECT *", retries=3)
+        assert len(rows) == 1
+        assert rows[0]["item"]["value"] == "Q1"
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_find_entity_id_api_cache_hit_on_no_search(
         self, mock_get: MagicMock
     ) -> None:
-        self.mock_cache.get.return_value = None
+        self.mock_cache.get_or_sentinel.return_value = _SENTINEL
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {}
@@ -422,16 +431,6 @@ class TestWikidataGraph:
         ).HTTPError(
             "url", 429, "Too Many", {}, None
         )
-
-        class Always429:
-            def __init__(self):
-                self.call_count = 0
-
-            def __call__(self, *args, **kwargs):
-                self.call_count += 1
-                raise http_error_429
-
-        from unittest.mock import PropertyMock
 
         # Simulate 3 429s to exhaust retries
         self.mock_sparql.query.side_effect = [
@@ -449,6 +448,3 @@ class TestWikidataGraph:
 
         rows = self.graph._run_query("SELECT *")
         assert rows == []
-
-
-from watson_lite.core.models import GraphResult

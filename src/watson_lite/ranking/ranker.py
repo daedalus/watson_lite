@@ -1,6 +1,11 @@
+import hashlib
+import logging
+
 from sentence_transformers import CrossEncoder
 
 from watson_lite.core.models import Passage, RankedPassage
+
+logger = logging.getLogger(__name__)
 
 RRF_K = 60
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
@@ -13,7 +18,9 @@ class RRFFusion:
 
         for ranked_list in ranked_lists:
             for rank, passage in enumerate(ranked_list, start=1):
-                key = passage.text[:80]
+                # Use a full-text hash to avoid collisions between passages
+                # whose first 80 characters happen to be identical.
+                key = hashlib.md5(passage.text.encode()).hexdigest()
                 scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
                 passage_map[key] = passage
 
@@ -30,7 +37,7 @@ class RRFFusion:
 
 class CrossEncoderReranker:
     def __init__(self, model_name: str = CROSS_ENCODER_MODEL) -> None:
-        print(f"[Ranker] Loading cross-encoder: {model_name}")
+        logger.debug("Loading cross-encoder: %s", model_name)
         self.model = CrossEncoder(model_name, max_length=512)
 
     def rerank(
@@ -74,14 +81,16 @@ class Ranker:
         top_k: int = 10,
     ) -> list[RankedPassage]:
 
-        print(
-            f"[Ranker] Fusing {len(bm25_results)} BM25 + {len(vector_results)} vector results"
+        logger.debug(
+            "Fusing %d BM25 + %d vector results",
+            len(bm25_results),
+            len(vector_results),
         )
         fused = self.rrf.fuse([bm25_results, vector_results])
-        print(f"[Ranker] RRF produced {len(fused)} candidates")
+        logger.debug("RRF produced %d candidates", len(fused))
 
         candidates = fused[:50]
         ranked = self.cross_encoder.rerank(query, candidates, top_k=top_k)
-        print(f"[Ranker] Final top-{len(ranked)} passages ranked")
+        logger.debug("Final top-%d passages ranked", len(ranked))
 
         return ranked

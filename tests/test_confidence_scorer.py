@@ -1,3 +1,5 @@
+import pytest
+
 from watson_lite.core.extractor import ConfidenceScorer
 from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
 
@@ -100,6 +102,3 @@ class TestConfidenceScorer:
         ]
         result = self.scorer.score(candidates, [], "where")
         assert result.confidence_breakdown["passage_rank_signal"] == 0.5
-
-
-import pytest
