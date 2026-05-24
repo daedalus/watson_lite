@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from watson_lite.__main__ import main
+from watson_lite.core.config import FeatureConfig
 
 
 class TestMain:
@@ -20,6 +21,67 @@ class TestMain:
             assert result == 0
             mock_wl_cls.assert_called_once()
             mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
+
+    def test_main_with_feature_flags(self) -> None:
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--no-vector-retrieval",
+                    "--no-graph-enrichment",
+                    "What",
+                    "is",
+                    "Python?",
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl_cls.return_value = mock_wl
+            result = main()
+
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert isinstance(called_config, FeatureConfig)
+            assert called_config.vector_retrieval is False
+            assert called_config.graph_enrichment is False
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
+
+    def test_main_benchmark_mode(self) -> None:
+        with (
+            patch("watson_lite.__main__.run_benchmark_profiles") as mock_run,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--benchmark-dataset",
+                    "/tmp/bench.json",
+                    "--ablation-sweep",
+                    "--regression-check",
+                ],
+            ),
+        ):
+            mock_run.return_value = ([], [])
+            result = main()
+
+            assert result == 0
+            mock_run.assert_called_once()
+
+    def test_main_benchmark_mode_regression_failure(self) -> None:
+        with (
+            patch("watson_lite.__main__.run_benchmark_profiles") as mock_run,
+            patch.object(
+                sys,
+                "argv",
+                ["prog", "--benchmark-dataset", "/tmp/bench.json", "--regression-check"],
+            ),
+        ):
+            mock_run.return_value = ([], [{"metric": "f1"}])
+            result = main()
+            assert result == 1
 
     def test_main_no_argv_interactive_quit(self) -> None:
         with (

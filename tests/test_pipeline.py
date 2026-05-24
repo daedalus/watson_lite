@@ -8,6 +8,7 @@ from watson_lite.core.models import (
     Passage,
     RankedPassage,
 )
+from watson_lite.core.config import FeatureConfig
 from watson_lite.pipeline import WatsonLite
 
 
@@ -57,6 +58,54 @@ class TestWatsonLite:
         self.mock_fetch = self.fetch_patcher.start()
 
         self.pipeline = WatsonLite()
+
+    def _setup_success_flow(self) -> None:
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="test question",
+            question_type="what",
+            entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 5}],
+            noun_chunks=["Eiffel Tower"],
+            root_verb="design",
+            sub_questions=["test question"],
+            keywords=["test", "question"],
+            lat_qids=["Q5"],
+        )
+        passages = [
+            Passage(
+                text="Gustave Eiffel designed the tower.",
+                source="Wikipedia",
+                url="http://example.com",
+            )
+        ]
+        self.mock_fetch.return_value = passages
+        self.mock_bm25.retrieve.return_value = passages
+        self.mock_vector.retrieve.return_value = passages
+        self.mock_graph.enrich_all.return_value = []
+        self.mock_ranker.rank.return_value = [
+            RankedPassage(
+                passage=passages[0],
+                rrf_score=0.5,
+                cross_score=0.9,
+                final_score=0.9,
+                rank=1,
+            )
+        ]
+        self.mock_reader.extract.return_value = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="Wikipedia",
+                url="http://example.com",
+                passage="Gustave Eiffel designed the tower.",
+                extraction_score=0.95,
+                rank=1,
+            )
+        ]
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="Gustave Eiffel",
+            confidence=0.9,
+            source="Wikipedia",
+            url="http://example.com",
+        )
 
     def teardown_method(self) -> None:
         for p in self.patches:
@@ -268,3 +317,66 @@ class TestWatsonLite:
 
         assert self.mock_bm25.index.call_count == 2
         assert self.mock_vector.index_passages.call_count == 2
+
+    def test_vector_retrieval_toggle_off(self) -> None:
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(
+            config=FeatureConfig.baseline().with_feature("vector_retrieval", False)
+        )
+
+        self.pipeline.answer("test question", verbose=False)
+
+        self.mock_vector.index_passages.assert_not_called()
+        self.mock_vector.retrieve.assert_not_called()
+
+    def test_query_expansion_toggle_off_uses_raw_question_once(self) -> None:
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(
+            config=FeatureConfig.baseline().with_feature("query_expansion", False)
+        )
+
+        self.pipeline.answer("test question", verbose=False)
+
+        self.mock_fetch.assert_called_once_with("test question", top_k=5)
+
+    def test_graph_enrichment_toggle_off(self) -> None:
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(
+            config=FeatureConfig.baseline().with_feature("graph_enrichment", False)
+        )
+
+        self.pipeline.answer("test question", verbose=False)
+
+        self.mock_graph.enrich_all.assert_not_called()
+
+    def test_cross_encoder_reranking_toggle_off(self) -> None:
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(
+            config=FeatureConfig.baseline().with_feature(
+                "cross_encoder_reranking", False
+            )
+        )
+
+        self.pipeline.answer("test question", verbose=False)
+
+        assert self.mock_ranker.rank.call_args is not None
+        assert (
+            self.mock_ranker.rank.call_args.kwargs["use_cross_encoder"] is False
+        )
+
+    def test_scoring_toggles_off(self) -> None:
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(
+            config=FeatureConfig.baseline()
+            .with_feature("question_type_bonus", False)
+            .with_feature("type_coercion", False)
+        )
+
+        self.pipeline.answer("test question", verbose=False)
+
+        assert self.mock_scorer.score.call_args is not None
+        assert (
+            self.mock_scorer.score.call_args.kwargs["enable_question_type_bonus"]
+            is False
+        )
+        assert self.mock_scorer.score.call_args.kwargs["enable_type_coercion"] is False

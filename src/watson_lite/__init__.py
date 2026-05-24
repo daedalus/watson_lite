@@ -10,6 +10,7 @@ from watson_lite.core.models import (
     Passage,
     RankedPassage,
 )
+from watson_lite.core.config import FeatureConfig
 from watson_lite.pipeline import WatsonLite
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "EntityFact",
     "GraphResult",
     "ParsedQuestion",
+    "FeatureConfig",
 ]

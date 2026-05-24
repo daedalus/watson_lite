@@ -185,3 +185,15 @@ class TestRanker:
     def test_rank_with_both_empty(self) -> None:
         result = self.ranker.rank("test", [], [], top_k=10)
         assert result == []
+
+    def test_rank_without_cross_encoder(self) -> None:
+        result = self.ranker.rank(
+            "test",
+            [Passage(text="x", source="s", url="u")],
+            [Passage(text="y", source="s", url="u")],
+            top_k=2,
+            use_cross_encoder=False,
+        )
+        assert len(result) == 2
+        assert result[0].final_score > 0.0
+        self.mock_model.predict.assert_not_called()

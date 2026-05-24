@@ -24,6 +24,35 @@ watson-lite "Who was the 44th president of the United States?"
 
 # Interactive mode
 watson-lite
+
+# Toggle optional features (ablation-style)
+watson-lite --no-vector-retrieval --no-graph-enrichment "Who designed the Eiffel Tower?"
+
+# Benchmark/eval run from dataset
+watson-lite \
+  --benchmark-dataset /path/to/benchmark.json \
+  --benchmark-output-json /tmp/watson_benchmark.json \
+  --benchmark-output-csv /tmp/watson_benchmark.csv
+
+# Full ablation sweep + regression gate against baseline
+watson-lite \
+  --benchmark-dataset /path/to/benchmark.json \
+  --ablation-sweep \
+  --regression-check \
+  --max-accuracy-drop 0.02 \
+  --max-f1-drop 0.02
+```
+
+Benchmark dataset format (`.json` or `.jsonl`):
+
+```json
+[
+  {
+    "question": "Who designed the Eiffel Tower?",
+    "answers": ["Gustave Eiffel"],
+    "evidence_passages": ["designed by Gustave Eiffel"]
+  }
+]
 ```
 
 ### Python
@@ -101,6 +130,23 @@ $ watson-lite "Who was the 44th president of the United States?"
 - **`ExtractiveReader`** — Span extraction via roberta-base-squad2.
 - **`ConfidenceScorer`** — Multi-signal confidence scoring.
 - **`Cache`** — SQLite3 cache for Wikipedia and Wikidata responses.
+
+## Feature inventory
+
+Core (always on):
+- NLP parse
+- Wikipedia fetch
+- BM25 retrieve
+- Span extraction
+- Final scoring shell
+
+Optional toggles (default enabled):
+- Vector retrieval (`--no-vector-retrieval`)
+- Query expansion variants (`--no-query-expansion`)
+- Wikidata graph enrichment (`--no-graph-enrichment`)
+- Cross-encoder reranking (`--no-cross-encoder-reranking`)
+- Question-type bonus (`--no-question-type-bonus`)
+- Type-coercion signal (`--no-type-coercion`)
 
 ## Development
 

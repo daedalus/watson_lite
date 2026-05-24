@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 
 from watson_lite.core.extractor import ConfidenceScorer, _question_type_bonus
 from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
@@ -116,6 +117,47 @@ class TestConfidenceScorer:
         ]
         result = self.scorer.score(candidates, [], "where")
         assert "question_type_bonus" in result.confidence_breakdown
+
+    def test_question_type_bonus_toggle_off(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="a",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        result = self.scorer.score(
+            candidates,
+            [],
+            "who",
+            enable_question_type_bonus=False,
+        )
+        assert result.confidence_breakdown["question_type_bonus"] == 0.0
+
+    def test_type_coercion_toggle_off(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="a",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        with patch("watson_lite.core.extractor.score_type_coercion") as mock_tc:
+            result = self.scorer.score(
+                candidates,
+                [],
+                "who",
+                lat_qids=["Q5"],
+                enable_type_coercion=False,
+            )
+            mock_tc.assert_not_called()
+            assert result.confidence_breakdown["type_coercion"] == 0.0
 
 
 class TestQuestionTypeBonus:

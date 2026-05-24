@@ -4,6 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from watson_lite.core.cache import CacheMetrics, get_cache_metrics_snapshot
+from watson_lite.core.config import FeatureConfig
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
 from watson_lite.core.fallbacks import is_fallback_answer_text
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer, GraphResult, Passage
@@ -24,8 +25,9 @@ def _passages_hash(passages: list[Passage]) -> str:
 
 
 class WatsonLite:
-    def __init__(self) -> None:
+    def __init__(self, config: FeatureConfig | None = None) -> None:
         logger.info("WatsonLite — Initializing pipeline")
+        self.config = config or FeatureConfig.baseline()
         self.nlp = NLPProcessor()
         self.bm25 = BM25Retriever()
         self.vector = VectorRetriever()
@@ -41,18 +43,24 @@ class WatsonLite:
         question: str,
         passages: list[Passage],
         needs_reindex: bool,
+        *,
+        vector_enabled: bool,
+        top_k: int,
     ) -> tuple[list[Passage], list[Passage]]:
         """Run BM25 and vector retrieval in parallel, re-indexing only when needed."""
 
         def _bm25_work() -> list[Passage]:
             if needs_reindex:
                 self.bm25.index(passages)
-            return self.bm25.retrieve(question, top_k=20)
+            return self.bm25.retrieve(question, top_k=top_k)
+
+        if not vector_enabled:
+            return _bm25_work(), []
 
         def _vector_work() -> list[Passage]:
             if needs_reindex:
                 self.vector.index_passages(passages)
-            return self.vector.retrieve(question, top_k=20)
+            return self.vector.retrieve(question, top_k=top_k)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             bm25_future = executor.submit(_bm25_work)
@@ -130,13 +138,19 @@ class WatsonLite:
 
         self._log_step(verbose, 2, "Parallel retrieval (BM25 + Vector)...")
         stage_t0 = time.perf_counter()
-        queries = generate_search_queries(parsed)
+        queries = (
+            generate_search_queries(parsed)
+            if self.config.query_expansion
+            else [parsed.raw]
+        )
         self._log_detail(verbose, "Search queries: %s", queries)
 
         seen_texts: set[str] = set()
         all_passages: list[Passage] = []
         for q in queries:
-            for p in fetch_wikipedia_passages(q, top_k=5):
+            for p in fetch_wikipedia_passages(
+                q, top_k=self.config.wikipedia_top_k_per_query
+            ):
                 if p.text not in seen_texts:
                     seen_texts.add(p.text)
                     all_passages.append(p)
@@ -177,7 +191,11 @@ class WatsonLite:
         self._last_passage_hash = passage_hash
 
         bm25_results, vector_results = self._retrieve_parallel(
-            question, passages, needs_reindex
+            question,
+            passages,
+            needs_reindex,
+            vector_enabled=self.config.vector_retrieval,
+            top_k=self.config.retrieval_top_k,
         )
         stage_latencies["retrieval"] = round(time.perf_counter() - stage_t0, 4)
 
@@ -187,14 +205,24 @@ class WatsonLite:
         self._log_step(verbose, 3, "Graph enrichment (Wikidata)...")
         stage_t0 = time.perf_counter()
         entity_names = [str(e["text"]) for e in parsed.entities]
-        graph_results = self.graph.enrich_all(entity_names) if entity_names else []
+        graph_results = (
+            self.graph.enrich_all(entity_names)
+            if entity_names and self.config.graph_enrichment
+            else []
+        )
         stage_latencies["graph"] = round(time.perf_counter() - stage_t0, 4)
 
         self._log_graph_results(verbose, graph_results)
 
         self._log_step(verbose, 4, "Ranking (RRF + cross-encoder)...")
         stage_t0 = time.perf_counter()
-        ranked = self.ranker.rank(question, bm25_results, vector_results, top_k=10)
+        ranked = self.ranker.rank(
+            question,
+            bm25_results,
+            vector_results,
+            top_k=self.config.rerank_top_k,
+            use_cross_encoder=self.config.cross_encoder_reranking,
+        )
         stage_latencies["ranking"] = round(time.perf_counter() - stage_t0, 4)
         passages_reranked = len(ranked)
 
@@ -205,7 +233,10 @@ class WatsonLite:
         extraction_errors = 0
         for sub_q in parsed.sub_questions:
             extraction_result = self.reader.extract(
-                sub_q, ranked, top_k=5, return_stats=True
+                sub_q,
+                ranked,
+                top_k=self.config.extraction_top_k,
+                return_stats=True,
             )
             if isinstance(extraction_result, tuple):
                 candidates, errors = extraction_result
@@ -225,6 +256,8 @@ class WatsonLite:
             graph_results,
             parsed.question_type,
             lat_qids=parsed.lat_qids,
+            enable_question_type_bonus=self.config.question_type_bonus,
+            enable_type_coercion=self.config.type_coercion,
         )
         stage_latencies["scoring"] = round(time.perf_counter() - stage_t0, 4)
 

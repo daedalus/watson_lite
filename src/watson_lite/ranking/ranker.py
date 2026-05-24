@@ -79,6 +79,8 @@ class Ranker:
         bm25_results: list[Passage],
         vector_results: list[Passage],
         top_k: int = 10,
+        *,
+        use_cross_encoder: bool = True,
     ) -> list[RankedPassage]:
 
         logger.debug(
@@ -89,8 +91,22 @@ class Ranker:
         fused = self.rrf.fuse([bm25_results, vector_results])
         logger.debug("RRF produced %d candidates", len(fused))
 
+        if not use_cross_encoder:
+            ranked: list[RankedPassage] = []
+            for rank, passage in enumerate(fused[:top_k], start=1):
+                ranked.append(
+                    RankedPassage(
+                        passage=passage,
+                        rrf_score=passage.score,
+                        cross_score=0.0,
+                        final_score=passage.score,
+                        rank=rank,
+                    )
+                )
+            logger.debug("Final top-%d passages ranked (RRF only)", len(ranked))
+            return ranked
+
         candidates = fused[:50]
         ranked = self.cross_encoder.rerank(query, candidates, top_k=top_k)
         logger.debug("Final top-%d passages ranked", len(ranked))
-
         return ranked
