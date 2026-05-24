@@ -273,9 +273,7 @@ class TestVectorAdversarial:
         self.mock_model.encode.return_value = np.array([[0.1] * 384], dtype="float32")
         self.retriever.index_passages([passage])
 
-        self.mock_model.encode.return_value = np.array(
-            [[0.1] * 128], dtype="float32"
-        )
+        self.mock_model.encode.return_value = np.array([[0.1] * 128], dtype="float32")
         with pytest.raises(Exception):
             self.retriever.retrieve("test", top_k=10)
 
@@ -326,9 +324,7 @@ class TestWikidataAdversarial:
         mock_resp.status_code = 429
         mock_get.return_value = mock_resp
 
-        self.mock_sparql.query().convert.return_value = {
-            "results": {"bindings": []}
-        }
+        self.mock_sparql.query().convert.return_value = {"results": {"bindings": []}}
 
         injections = [
             '"; DROP TABLE cache; --',
@@ -394,9 +390,7 @@ class TestWikidataAdversarial:
         label_resp.status_code = 200
         label_resp.json.return_value = {
             "entities": {
-                "Q207773": {
-                    "labels": {"en": {"value": "Gustave Eiffel"}}
-                },
+                "Q207773": {"labels": {"en": {"value": "Gustave Eiffel"}}},
             }
         }
 
@@ -494,7 +488,9 @@ class TestConfidenceScorerAdversarial:
     def test_candidates_with_zero_scores(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="x", source="s", url="", passage="", extraction_score=0.0, rank=1)
+            AnswerCandidate(
+                span="x", source="s", url="", passage="", extraction_score=0.0, rank=1
+            )
         ]
         answer = scorer.score(candidates, [], "what")
         assert answer.confidence == 0.25
@@ -502,8 +498,12 @@ class TestConfidenceScorerAdversarial:
     def test_all_scores_zero(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="x", source="s", url="", passage="", extraction_score=0.0, rank=100),
-            AnswerCandidate(span="y", source="s", url="", passage="", extraction_score=0.0, rank=200),
+            AnswerCandidate(
+                span="x", source="s", url="", passage="", extraction_score=0.0, rank=100
+            ),
+            AnswerCandidate(
+                span="y", source="s", url="", passage="", extraction_score=0.0, rank=200
+            ),
         ]
         answer = scorer.score(candidates, [], "what")
         assert answer.confidence == 0.075
@@ -511,7 +511,14 @@ class TestConfidenceScorerAdversarial:
     def test_span_agreement_all_unique(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span=f"ans{i}", source="s", url="", passage="", extraction_score=float(1 - i * 0.1), rank=i + 1)
+            AnswerCandidate(
+                span=f"ans{i}",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=float(1 - i * 0.1),
+                rank=i + 1,
+            )
             for i in range(5)
         ]
         answer = scorer.score(candidates, [], "what")
@@ -520,7 +527,9 @@ class TestConfidenceScorerAdversarial:
     def test_rank_penalty_beyond_10(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="x", source="s", url="", passage="", extraction_score=0.9, rank=15)
+            AnswerCandidate(
+                span="x", source="s", url="", passage="", extraction_score=0.9, rank=15
+            )
         ]
         answer = scorer.score(candidates, [], "what")
         assert answer.confidence_breakdown["passage_rank_signal"] == 0.0
@@ -528,13 +537,26 @@ class TestConfidenceScorerAdversarial:
     def test_graph_corroboration_case_insensitive(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="Gustave Eiffel", source="s", url="", passage="", extraction_score=0.9, rank=1)
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            )
         ]
         graph_results = [
             GraphResult(
                 entity_name="Eiffel Tower",
                 wikidata_id="Q243",
-                facts=[EntityFact(entity="Q243", property_label="architect", value="gustave eiffel")],
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="architect",
+                        value="gustave eiffel",
+                    )
+                ],
             )
         ]
         answer = scorer.score(candidates, graph_results, "who")
@@ -551,14 +573,34 @@ class TestConfidenceScorerAdversarial:
     def test_confidence_clamped_at_1(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="Gustave Eiffel", source="s", url="", passage="", extraction_score=1.0, rank=1),
-            AnswerCandidate(span="Gustave Eiffel", source="s", url="", passage="", extraction_score=1.0, rank=1),
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=1.0,
+                rank=1,
+            ),
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=1.0,
+                rank=1,
+            ),
         ]
         graph_results = [
             GraphResult(
                 entity_name="Eiffel Tower",
                 wikidata_id="Q243",
-                facts=[EntityFact(entity="Q243", property_label="architect", value="Gustave Eiffel")],
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="architect",
+                        value="Gustave Eiffel",
+                    )
+                ],
             )
         ]
         answer = scorer.score(candidates, graph_results, "who")
@@ -567,7 +609,14 @@ class TestConfidenceScorerAdversarial:
     def test_final_answer_supporting_passages_truncation(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="x", source="s", url="", passage="x" * 500, extraction_score=0.9, rank=1)
+            AnswerCandidate(
+                span="x",
+                source="s",
+                url="",
+                passage="x" * 500,
+                extraction_score=0.9,
+                rank=1,
+            )
         ]
         answer = scorer.score(candidates, [], "what")
         assert all(len(p) <= 200 for p in answer.supporting_passages)
@@ -575,13 +624,23 @@ class TestConfidenceScorerAdversarial:
     def test_graph_facts_limited_to_5(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="Paris", source="s", url="", passage="", extraction_score=0.9, rank=1)
+            AnswerCandidate(
+                span="Paris",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            )
         ]
         graph_results = [
             GraphResult(
                 entity_name="X",
                 wikidata_id="Q1",
-                facts=[EntityFact(entity="Q1", property_label=f"p{i}", value="Paris") for i in range(10)],
+                facts=[
+                    EntityFact(entity="Q1", property_label=f"p{i}", value="Paris")
+                    for i in range(10)
+                ],
             )
         ]
         answer = scorer.score(candidates, graph_results, "where")
@@ -656,14 +715,18 @@ class TestPipelineAdversarial:
 
         self.mock_fetch.return_value = [Passage("test", "s", "u")]
         self.mock_nlp.process.return_value = ParsedQuestion(
-            raw="test question", question_type="test",
-            entities=[], noun_chunks=[], root_verb=None,
-            sub_questions=["test question"], keywords=[],
+            raw="test question",
+            question_type="test",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test question"],
+            keywords=[],
         )
         self.mock_reader.extract.return_value = [
             AnswerCandidate(
-                span="ans", source="s", url="", passage="",
-                extraction_score=0.9, rank=1)
+                span="ans", source="s", url="", passage="", extraction_score=0.9, rank=1
+            )
         ]
         self.mock_scorer.score.return_value = FinalAnswer(
             answer="ans", confidence=0.5, source="s", url=""
@@ -682,9 +745,13 @@ class TestPipelineAdversarial:
 
         self.mock_fetch.return_value = [Passage("test text", "s", "u")]
         self.mock_nlp.process.return_value = ParsedQuestion(
-            raw="test", question_type="test", entities=[],
-            noun_chunks=[], root_verb=None,
-            sub_questions=["test"], keywords=[],
+            raw="test",
+            question_type="test",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=[],
         )
         self.mock_ranker.rank.return_value = []
         self.mock_reader.extract.return_value = []
@@ -747,8 +814,9 @@ class TestCacheCoverage:
         import tempfile
 
         with (
-            patch("watson_lite.core.cache._DEFAULT_CACHE_DIR",
-                  Path(tempfile.mkdtemp())),
+            patch(
+                "watson_lite.core.cache._DEFAULT_CACHE_DIR", Path(tempfile.mkdtemp())
+            ),
         ):
             from watson_lite.core.cache import Cache
 
@@ -824,8 +892,12 @@ class TestExtractorCoverage:
         scorer = ConfidenceScorer()
         candidates = [
             AnswerCandidate(
-                span="Gustave Eiffel", source="s", url="", passage="",
-                extraction_score=0.9, rank=1,
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
             )
         ]
         graph_results = [
@@ -834,7 +906,8 @@ class TestExtractorCoverage:
                 wikidata_id="Q243",
                 facts=[
                     EntityFact(
-                        entity="Q243", property_label="architect",
+                        entity="Q243",
+                        property_label="architect",
                         value="Gustave",  # shorter value contained in span
                     )
                 ],
@@ -890,9 +963,7 @@ class TestWikidataCoverage:
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_enrich_cleaned_name_empty(self, mock_get: MagicMock) -> None:
-        with patch.object(
-            self.graph, "find_entity_id", return_value=None
-        ):
+        with patch.object(self.graph, "find_entity_id", return_value=None):
             result = self.graph.enrich("")
             assert result is not None
             assert result.wikidata_id is None
@@ -957,20 +1028,31 @@ class TestPipelineCoverage:
 
         self.mock_fetch.return_value = [Passage("test", "s", "u")]
         self.mock_nlp.process.return_value = ParsedQuestion(
-            raw="test", question_type="test",
+            raw="test",
+            question_type="test",
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 13}],
-            noun_chunks=[], root_verb=None,
-            sub_questions=["test"], keywords=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=[],
         )
         self.mock_graph.enrich_all.return_value = [
             GraphResult(
                 entity_name="Eiffel Tower",
                 wikidata_id="Q243",
-                facts=[EntityFact(entity="Q243", property_label="architect", value="Gustave Eiffel")],
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="architect",
+                        value="Gustave Eiffel",
+                    )
+                ],
             )
         ]
         self.mock_reader.extract.return_value = [
-            AnswerCandidate(span="ans", source="s", url="", passage="", extraction_score=0.9, rank=1)
+            AnswerCandidate(
+                span="ans", source="s", url="", passage="", extraction_score=0.9, rank=1
+            )
         ]
         self.mock_scorer.score.return_value = FinalAnswer(
             answer="ans", confidence=0.5, source="s", url=""
@@ -1160,7 +1242,8 @@ class TestBM25Degenerate:
     def test_index_and_retrieve_single_passage(self) -> None:
         self.retriever.index([Passage("unique text here", "s", "u")])
         self.mock_retriever_instance.retrieve.return_value = (
-            [["unique text here"]], [[0.5]]
+            [["unique text here"]],
+            [[0.5]],
         )
         result = self.retriever.retrieve("query", top_k=10)
         assert len(result) == 1
@@ -1175,7 +1258,8 @@ class TestBM25Degenerate:
         self.retriever.index([p1])
         self.retriever.index([p2])
         self.mock_retriever_instance.retrieve.return_value = (
-            [["second corpus"]], [[0.9]]
+            [["second corpus"]],
+            [[0.9]],
         )
         result = self.retriever.retrieve("query", top_k=10)
         assert len(result) == 1
@@ -1186,18 +1270,20 @@ class TestBM25Degenerate:
 
         with (
             patch("watson_lite.retrieval.bm25_retriever.requests") as mock_requests,
-            patch("watson_lite.retrieval.bm25_retriever.ThreadPoolExecutor") as mock_exec,
+            patch(
+                "watson_lite.retrieval.bm25_retriever.ThreadPoolExecutor"
+            ) as mock_exec,
         ):
             search_resp = MagicMock()
             search_resp.status_code = 200
-            search_resp.json.return_value = {
-                "query": {"search": [{"title": "Test"}]}
-            }
+            search_resp.json.return_value = {"query": {"search": [{"title": "Test"}]}}
             mock_requests.get.return_value = search_resp
 
             mock_future = MagicMock()
             mock_future.result.return_value = [
-                Passage("hello world " * 50, "Test", "https://en.wikipedia.org/wiki/Test")
+                Passage(
+                    "hello world " * 50, "Test", "https://en.wikipedia.org/wiki/Test"
+                )
             ]
             mock_executor = MagicMock()
             mock_executor.__enter__.return_value = mock_executor
@@ -1308,7 +1394,9 @@ class TestConfidenceScorerPathological:
     def test_span_empty_string(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="", source="s", url="", passage="", extraction_score=0.9, rank=1),
+            AnswerCandidate(
+                span="", source="s", url="", passage="", extraction_score=0.9, rank=1
+            ),
         ]
         answer = scorer.score(candidates, [], "what")
         assert answer.confidence > 0
@@ -1316,7 +1404,14 @@ class TestConfidenceScorerPathological:
     def test_very_long_span(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="x" * 1000, source="s", url="", passage="", extraction_score=0.9, rank=1),
+            AnswerCandidate(
+                span="x" * 1000,
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
         ]
         answer = scorer.score(candidates, [], "what")
         assert answer.confidence > 0
@@ -1324,7 +1419,14 @@ class TestConfidenceScorerPathological:
     def test_all_candidates_identical_span(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="Gustave Eiffel", source="s", url="", passage=f"p{i}", extraction_score=0.8, rank=i+1)
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage=f"p{i}",
+                extraction_score=0.8,
+                rank=i + 1,
+            )
             for i in range(10)
         ]
         answer = scorer.score(candidates, [], "who")
@@ -1333,7 +1435,9 @@ class TestConfidenceScorerPathological:
     def test_rank_signals_for_all_positions(self) -> None:
         scorer = ConfidenceScorer()
         candidates = [
-            AnswerCandidate(span="x", source="s", url="", passage="", extraction_score=0.9, rank=r)
+            AnswerCandidate(
+                span="x", source="s", url="", passage="", extraction_score=0.9, rank=r
+            )
             for r in range(1, 12)
         ]
         answer = scorer.score(candidates, [], "what")
@@ -1400,9 +1504,13 @@ class TestPipelineFailure:
 
         self.mock_fetch.return_value = [Passage("test", "s", "u")]
         self.mock_nlp.process.return_value = ParsedQuestion(
-            raw="test", question_type="test",
+            raw="test",
+            question_type="test",
             entities=[{"text": "entity", "label": "ORG", "start": 0, "end": 6}],
-            noun_chunks=[], root_verb=None, sub_questions=["test"], keywords=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=[],
         )
         self.mock_graph.enrich_all.side_effect = RuntimeError("Wikidata down")
         with pytest.raises(RuntimeError, match="Wikidata down"):
@@ -1413,13 +1521,20 @@ class TestPipelineFailure:
 
         self.mock_fetch.return_value = [Passage("test", "s", "u")]
         self.mock_nlp.process.return_value = ParsedQuestion(
-            raw="test", question_type="test",
-            entities=[], noun_chunks=[], root_verb=None,
-            sub_questions=["test"], keywords=[],
+            raw="test",
+            question_type="test",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=[],
         )
         self.mock_reader.extract.return_value = []
         mock_answer = FinalAnswer(
-            answer="No answer found", confidence=0.0, source="", url="",
+            answer="No answer found",
+            confidence=0.0,
+            source="",
+            url="",
             confidence_breakdown={"reason": "no candidates"},
         )
         self.mock_scorer.score.return_value = mock_answer
@@ -1431,9 +1546,13 @@ class TestPipelineFailure:
 
         self.mock_fetch.return_value = [Passage("test", "s", "u")]
         self.mock_nlp.process.return_value = ParsedQuestion(
-            raw="test", question_type="test",
-            entities=[], noun_chunks=[], root_verb=None,
-            sub_questions=["test"], keywords=[],
+            raw="test",
+            question_type="test",
+            entities=[],
+            noun_chunks=[],
+            root_verb=None,
+            sub_questions=["test"],
+            keywords=[],
         )
         self.mock_reader.extract.return_value = []
         self.mock_scorer.score.return_value = FinalAnswer(
@@ -1467,13 +1586,22 @@ class TestE2EFailures:
             sub_questions=["Who designed the Eiffel Tower?"],
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 13}],
             question_type="who",
-            noun_chunks=[], root_verb=None, keywords=[],
+            noun_chunks=[],
+            root_verb=None,
+            keywords=[],
         )
         wl.scorer.score.return_value = FinalAnswer(
             answer="Gustave Eiffel", confidence=0.5, source="", url=""
         )
         wl.reader.extract.return_value = [
-            AnswerCandidate(span="Gustave Eiffel", source="", url="", passage="", extraction_score=0.9, rank=1)
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            )
         ]
         result = wl.answer("Who designed the Eiffel Tower?", verbose=False)
         assert result.answer == "Gustave Eiffel"

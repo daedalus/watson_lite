@@ -6,13 +6,11 @@ import string
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from watson_lite.core.fallbacks import is_fallback_answer_text
+
 if TYPE_CHECKING:
     from watson_lite.core.models import FinalAnswer
 
-_FALLBACK_ANSWERS = {
-    "no answer found",
-    "could not retrieve relevant passages.",
-}
 _P50_INDEX = 49
 _P95_INDEX = 94
 
@@ -73,19 +71,30 @@ def _exact_match(prediction: str, reference: str) -> float:
 
 
 def _is_success(answer: FinalAnswer) -> bool:
-    return (
-        answer.confidence > 0.0
-        and answer.answer.lower().strip() not in _FALLBACK_ANSWERS
-    )
+    return answer.confidence > 0.0 and not is_fallback_answer_text(answer.answer)
 
 
 def _is_failure(answer: FinalAnswer) -> bool:
-    if answer.answer.lower().strip() in _FALLBACK_ANSWERS or answer.confidence <= 0.0:
+    if is_fallback_answer_text(answer.answer) or answer.confidence <= 0.0:
         return True
     diagnostics = answer.diagnostics
     if diagnostics is None:
         return False
     return diagnostics.retrieval_empty or diagnostics.extraction_errors > 0
+
+
+def _average_passage_metric(
+    answers: list[FinalAnswer],
+    metric_name: str,
+) -> float:
+    values = [
+        float(getattr(answer.diagnostics, metric_name))
+        for answer in answers
+        if answer.diagnostics is not None
+    ]
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
 
 
 def _ece(scores: list[float], labels: list[bool], bins: int = 10) -> float:
@@ -228,28 +237,9 @@ def evaluate_kpis(
     cache_total = cache_hits + cache_misses
     cache_hit_rate = (cache_hits / cache_total) if cache_total else 0.0
 
-    avg_fetched = (
-        sum(
-            a.diagnostics.passages_fetched for a in answers if a.diagnostics is not None
-        )
-        / total
-    )
-    avg_reranked = (
-        sum(
-            a.diagnostics.passages_reranked
-            for a in answers
-            if a.diagnostics is not None
-        )
-        / total
-    )
-    avg_extracted = (
-        sum(
-            a.diagnostics.passages_extracted
-            for a in answers
-            if a.diagnostics is not None
-        )
-        / total
-    )
+    avg_fetched = _average_passage_metric(answers, "passages_fetched")
+    avg_reranked = _average_passage_metric(answers, "passages_reranked")
+    avg_extracted = _average_passage_metric(answers, "passages_extracted")
 
     accuracy_at_1: float | None = None
     em_score: float | None = None

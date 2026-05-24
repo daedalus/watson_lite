@@ -1,7 +1,15 @@
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
-from watson_lite.core.cache import Cache, SENTINEL
+from watson_lite.core.cache import (
+    SENTINEL,
+    Cache,
+    _record_cache_hit,
+    _record_cache_miss,
+    get_cache_metrics_snapshot,
+    reset_cache_metrics,
+)
 
 
 class TestCache:
@@ -13,6 +21,7 @@ class TestCache:
     def teardown_method(self) -> None:
         self.cache.close()
         os.unlink(self.tmp)
+        reset_cache_metrics()
 
     def test_get_miss(self) -> None:
         assert self.cache.get("nonexistent") is None
@@ -49,3 +58,22 @@ class TestCache:
         # get_or_sentinel() distinguishes the two cases.
         assert self.cache.get_or_sentinel("null") is None
         assert self.cache.get_or_sentinel("absent") is SENTINEL
+
+    def test_cache_metrics_updates_are_thread_safe(self) -> None:
+        reset_cache_metrics()
+
+        def record_metrics() -> None:
+            for _ in range(200):
+                _record_cache_hit("wiki:paris")
+                _record_cache_miss("graph:eiffel")
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(record_metrics) for _ in range(8)]
+            for future in futures:
+                future.result()
+
+        metrics = get_cache_metrics_snapshot()
+        assert metrics["hits"] == 1600
+        assert metrics["misses"] == 1600
+        assert metrics["hits_by_namespace"] == {"wiki": 1600}
+        assert metrics["misses_by_namespace"] == {"graph": 1600}

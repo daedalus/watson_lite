@@ -1,6 +1,7 @@
+import pytest
+
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.kpis import BenchmarkLabel, evaluate_kpis
-import pytest
 
 
 def _answer(
@@ -115,3 +116,23 @@ class TestKPIEvaluation:
     def test_requires_non_empty_answers(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
             evaluate_kpis([])
+
+    def test_average_passage_metrics_ignore_missing_diagnostics(self) -> None:
+        answers = [
+            _answer(
+                "Gustave Eiffel",
+                0.9,
+                diagnostics=AnswerDiagnostics(
+                    passages_fetched=12,
+                    passages_reranked=10,
+                    passages_extracted=5,
+                ),
+            ),
+            _answer("Paris", 0.8, diagnostics=None),
+        ]
+
+        report = evaluate_kpis(answers)
+
+        assert report.average_passages_fetched == 12.0
+        assert report.average_passages_reranked == 10.0
+        assert report.average_passages_extracted == 5.0

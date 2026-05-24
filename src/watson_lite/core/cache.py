@@ -5,6 +5,7 @@ import pathlib
 import sqlite3
 import time
 from copy import deepcopy
+from threading import Lock
 from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ _cache_metrics: CacheMetrics = {
     "hits_by_namespace": {},
     "misses_by_namespace": {},
 }
+_cache_metrics_lock = Lock()
 
 
 def _namespace_for_key(key: str) -> str:
@@ -38,13 +40,19 @@ def _namespace_for_key(key: str) -> str:
     return prefix or "other"
 
 
-def _bump_metric(bucket: str, key: str) -> None:
+def _record_cache_hit(key: str) -> None:
     namespace = _namespace_for_key(key)
-    if bucket == "hits_by_namespace":
+    with _cache_metrics_lock:
+        _cache_metrics["hits"] = int(_cache_metrics["hits"]) + 1
         _cache_metrics["hits_by_namespace"][namespace] = (
             _cache_metrics["hits_by_namespace"].get(namespace, 0) + 1
         )
-    elif bucket == "misses_by_namespace":
+
+
+def _record_cache_miss(key: str) -> None:
+    namespace = _namespace_for_key(key)
+    with _cache_metrics_lock:
+        _cache_metrics["misses"] = int(_cache_metrics["misses"]) + 1
         _cache_metrics["misses_by_namespace"][namespace] = (
             _cache_metrics["misses_by_namespace"].get(namespace, 0) + 1
         )
@@ -52,15 +60,17 @@ def _bump_metric(bucket: str, key: str) -> None:
 
 def get_cache_metrics_snapshot() -> CacheMetrics:
     """Return a deep copy of cache hit/miss counters for KPI reporting."""
-    return deepcopy(_cache_metrics)
+    with _cache_metrics_lock:
+        return deepcopy(_cache_metrics)
 
 
 def reset_cache_metrics() -> None:
     """Reset cache hit/miss counters used by KPI diagnostics."""
-    _cache_metrics["hits"] = 0
-    _cache_metrics["misses"] = 0
-    _cache_metrics["hits_by_namespace"] = {}
-    _cache_metrics["misses_by_namespace"] = {}
+    with _cache_metrics_lock:
+        _cache_metrics["hits"] = 0
+        _cache_metrics["misses"] = 0
+        _cache_metrics["hits_by_namespace"] = {}
+        _cache_metrics["misses_by_namespace"] = {}
 
 
 def is_cache_miss(value: object) -> bool:
@@ -123,11 +133,9 @@ class Cache:
             "SELECT value FROM cache WHERE key = ?", (key,)
         ).fetchone()
         if row:
-            _cache_metrics["hits"] = int(_cache_metrics["hits"]) + 1
-            _bump_metric("hits_by_namespace", key)
+            _record_cache_hit(key)
             return self._unwrap(row[0])
-        _cache_metrics["misses"] = int(_cache_metrics["misses"]) + 1
-        _bump_metric("misses_by_namespace", key)
+        _record_cache_miss(key)
         return SENTINEL
 
     def set(self, key: str, value: Any) -> None:  # noqa: ANN401
