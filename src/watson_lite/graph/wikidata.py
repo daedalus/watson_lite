@@ -1,11 +1,14 @@
+import logging
 import time
 from urllib.error import HTTPError
 
 import requests
 from SPARQLWrapper import JSON, SPARQLWrapper
 
-from watson_lite.core.cache import get_cache
+from watson_lite.core.cache import _SENTINEL, get_cache
 from watson_lite.core.models import EntityFact, GraphResult
+
+logger = logging.getLogger(__name__)
 
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "WatsonLite/1.0 (research project; python)"
@@ -25,25 +28,30 @@ class WikidataGraph:
                 return results["results"]["bindings"]
             except HTTPError as e:
                 if e.code == 429 and attempt < retries - 1:
-                    wait = 30 * (attempt + 1)
-                    print(
-                        f"[Graph] Rate limited, retrying in {wait}s (attempt {attempt + 2}/{retries})"
+                    # Exponential back-off: 2s, 4s, 8s, …
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        "Rate limited by SPARQL endpoint, retrying in %ss "
+                        "(attempt %d/%d)",
+                        wait,
+                        attempt + 2,
+                        retries,
                     )
                     time.sleep(wait)
                     continue
-                print(f"[Graph] SPARQL error: {e}")
+                logger.warning("SPARQL HTTP error: %s", e)
                 return []
             except Exception as e:
-                print(f"[Graph] SPARQL error: {e}")
+                logger.warning("SPARQL query error: %s", e)
                 return []
         return []
 
     def find_entity_id(self, entity_name: str) -> str | None:
         cache = get_cache()
         cache_key = f"wd:entity:{entity_name.lower().strip()}"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return str(cached)
+        cached = cache.get_or_sentinel(cache_key)
+        if cached is not _SENTINEL:
+            return str(cached) if cached is not None else None
 
         url = "https://www.wikidata.org/w/api.php"
         params = {
@@ -57,7 +65,7 @@ class WikidataGraph:
                 url, params=params, headers={"User-Agent": USER_AGENT}, timeout=10
             )
             if resp.status_code == 429:
-                print("[Graph] Rate limited on entity search, falling back to SPARQL")
+                logger.warning("Rate limited on entity search, falling back to SPARQL")
                 qid = self._find_entity_id_sparql(entity_name)
                 if qid:
                     cache.set(cache_key, qid)
@@ -68,14 +76,16 @@ class WikidataGraph:
                 cache.set(cache_key, qid)
                 return qid
         except Exception as e:
-            print(f"[Graph] Entity search error: {e}")
+            logger.warning("Entity search error: %s", e)
         return None
 
     def _find_entity_id_sparql(self, entity_name: str) -> str | None:
+        # Escape double-quotes to prevent SPARQL injection.
+        safe_name = entity_name.replace("\\", "\\\\").replace('"', '\\"')
         query = f"""
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT ?item WHERE {{
-          ?item rdfs:label "{entity_name}"@en .
+          ?item rdfs:label "{safe_name}"@en .
         }}
         LIMIT 1
         """
@@ -88,15 +98,15 @@ class WikidataGraph:
     def get_entity_facts(self, qid: str, max_facts: int = 15) -> list[EntityFact]:
         cache = get_cache()
         cache_key = f"wd:facts:{qid}"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return [EntityFact(**f) for f in cached]
+        cached = cache.get_or_sentinel(cache_key)
+        if cached is not _SENTINEL:
+            return [EntityFact(**f) for f in cached]  # type: ignore[arg-type]
 
         url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
         try:
             resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
             if resp.status_code != 200:
-                print(f"[Graph] EntityData error: HTTP {resp.status_code}")
+                logger.warning("EntityData request failed: HTTP %s", resp.status_code)
                 return []
             data = resp.json()
             entity = data.get("entities", {}).get(qid, {})
@@ -129,10 +139,11 @@ class WikidataGraph:
                 cache.set(cache_key, [f.__dict__ for f in facts])
             return facts
         except Exception as e:
-            print(f"[Graph] EntityData error: {e}")
+            logger.warning("EntityData error: %s", e)
             return []
 
     def get_related_entities(self, _qid: str, _max_related: int = 10) -> list[str]:
+        # TODO: implement related-entity expansion via Wikidata properties.
         return []
 
     @staticmethod
@@ -147,23 +158,27 @@ class WikidataGraph:
     def enrich(self, entity_name: str) -> GraphResult:
         cleaned = self._clean_entity_name(entity_name)
         if cleaned:
-            print(f"[Graph] Enriching entity: '{entity_name}' -> '{cleaned}'")
+            logger.debug("Enriching entity: '%s' -> '%s'", entity_name, cleaned)
         else:
             cleaned = entity_name
-            print(f"[Graph] Enriching entity: '{entity_name}'")
+            logger.debug("Enriching entity: '%s'", entity_name)
         qid = self.find_entity_id(cleaned)
         result = GraphResult(entity_name=entity_name, wikidata_id=qid)
 
         if qid:
             result.facts = self.get_entity_facts(qid)
             result.related_entities = self.get_related_entities(qid)
-            print(
-                f"[Graph] Found {len(result.facts)} facts, {len(result.related_entities)} related entities for {qid}"
+            logger.debug(
+                "Found %d facts, %d related entities for %s",
+                len(result.facts),
+                len(result.related_entities),
+                qid,
             )
         else:
-            print(f"[Graph] No Wikidata ID found for '{cleaned}'")
+            logger.debug("No Wikidata ID found for '%s'", cleaned)
 
         return result
 
     def enrich_all(self, entity_names: list[str]) -> list[GraphResult]:
         return [self.enrich(name) for name in entity_names]
+

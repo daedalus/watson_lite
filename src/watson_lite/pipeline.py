@@ -1,3 +1,4 @@
+import logging
 import time
 
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
@@ -8,12 +9,12 @@ from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import BM25Retriever, fetch_wikipedia_passages
 from watson_lite.retrieval.vector_retriever import VectorRetriever
 
+logger = logging.getLogger(__name__)
+
 
 class WatsonLite:
     def __init__(self) -> None:
-        print("=" * 50)
-        print("  WatsonLite — Initializing pipeline")
-        print("=" * 50)
+        logger.info("WatsonLite — Initializing pipeline")
         self.nlp = NLPProcessor()
         self.bm25 = BM25Retriever()
         self.vector = VectorRetriever()
@@ -21,9 +22,7 @@ class WatsonLite:
         self.ranker = Ranker()
         self.reader = ExtractiveReader()
         self.scorer = ConfidenceScorer()
-        print("=" * 50)
-        print("  All components loaded. Ready.")
-        print("=" * 50)
+        logger.info("All components loaded. Ready.")
 
     def answer(self, question: str, verbose: bool = True) -> FinalAnswer:
         if not question:
@@ -32,15 +31,15 @@ class WatsonLite:
         t0 = time.time()
 
         if verbose:
-            print("\n[1/6] NLP preprocessing...")
+            logger.info("[1/6] NLP preprocessing...")
         parsed = self.nlp.process(question)
         if verbose:
-            print(f"      Type: {parsed.question_type}")
-            print(f"      Entities: {[e['text'] for e in parsed.entities]}")
-            print(f"      Sub-questions: {parsed.sub_questions}")
+            logger.info("      Type: %s", parsed.question_type)
+            logger.info("      Entities: %s", [e["text"] for e in parsed.entities])
+            logger.info("      Sub-questions: %s", parsed.sub_questions)
 
         if verbose:
-            print("\n[2/6] Parallel retrieval (BM25 + Vector)...")
+            logger.info("[2/6] Parallel retrieval (BM25 + Vector)...")
         passages = fetch_wikipedia_passages(question, top_k=5)
 
         if not passages:
@@ -58,24 +57,24 @@ class WatsonLite:
         vector_results = self.vector.retrieve(question, top_k=20)
 
         if verbose:
-            print(f"      BM25: {len(bm25_results)} passages")
-            print(f"      Vector: {len(vector_results)} passages")
+            logger.info("      BM25: %d passages", len(bm25_results))
+            logger.info("      Vector: %d passages", len(vector_results))
 
         if verbose:
-            print("\n[3/6] Graph enrichment (Wikidata)...")
+            logger.info("[3/6] Graph enrichment (Wikidata)...")
         entity_names = [str(e["text"]) for e in parsed.entities]
         graph_results = self.graph.enrich_all(entity_names) if entity_names else []
 
         if verbose:
             for gr in graph_results:
-                print(f"      {gr.entity_name}: {len(gr.facts)} facts")
+                logger.info("      %s: %d facts", gr.entity_name, len(gr.facts))
 
         if verbose:
-            print("\n[4/6] Ranking (RRF + cross-encoder)...")
+            logger.info("[4/6] Ranking (RRF + cross-encoder)...")
         ranked = self.ranker.rank(question, bm25_results, vector_results, top_k=10)
 
         if verbose:
-            print("\n[5/6] Extractive answer span extraction...")
+            logger.info("[5/6] Extractive answer span extraction...")
 
         all_candidates = []
         for sub_q in parsed.sub_questions:
@@ -85,7 +84,7 @@ class WatsonLite:
         all_candidates.sort(key=lambda c: c.extraction_score, reverse=True)
 
         if verbose:
-            print("\n[6/6] Confidence scoring...")
+            logger.info("[6/6] Confidence scoring...")
         answer = self.scorer.score(all_candidates, graph_results, parsed.question_type)
 
         elapsed = time.time() - t0
@@ -95,17 +94,17 @@ class WatsonLite:
         return answer
 
     def _print_answer(self, answer: FinalAnswer, elapsed: float) -> None:
-        print("\n" + "=" * 50)
-        print(f"  ANSWER:     {answer.answer}")
-        print(f"  CONFIDENCE: {answer.confidence:.1%}")
-        print(f"  SOURCE:     {answer.source}")
-        print(f"  URL:        {answer.url}")
+        logger.info("=" * 50)
+        logger.info("  ANSWER:     %s", answer.answer)
+        logger.info("  CONFIDENCE: %.1f%%", answer.confidence * 100)
+        logger.info("  SOURCE:     %s", answer.source)
+        logger.info("  URL:        %s", answer.url)
         if answer.graph_facts:
-            print("  GRAPH CORROBORATION:")
+            logger.info("  GRAPH CORROBORATION:")
             for f in answer.graph_facts[:3]:
-                print(f"    · {f}")
-        print("\n  Confidence breakdown:")
+                logger.info("    · %s", f)
+        logger.info("  Confidence breakdown:")
         for k, v in answer.confidence_breakdown.items():
-            print(f"    {k}: {v}")
-        print(f"\n  Time: {elapsed:.2f}s")
-        print("=" * 50)
+            logger.info("    %s: %s", k, v)
+        logger.info("  Time: %.2fs", elapsed)
+        logger.info("=" * 50)

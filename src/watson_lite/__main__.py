@@ -1,9 +1,12 @@
+import logging
 import sys
 
 from watson_lite.pipeline import WatsonLite
 
 
 def main() -> int:
+    logging.basicConfig(format="%(message)s", level=logging.INFO)
+
     watson = WatsonLite()
 
     if len(sys.argv) > 1:
@@ -13,7 +16,7 @@ def main() -> int:
 
     print("""
 ╔══════════════════════════════════════╗
-║         WatsonLite  v1.0             ║
+║         WatsonLite  v0.1.0           ║
 ║  Extractive QA · No LLM · No Training║
 ╚══════════════════════════════════════╝
 Type a question and press Enter.

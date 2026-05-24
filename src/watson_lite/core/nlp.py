@@ -1,7 +1,11 @@
+import logging
+
 import spacy
 from spacy.tokens import Doc
 
 from watson_lite.core.models import ParsedQuestion
+
+logger = logging.getLogger(__name__)
 
 QUESTION_TYPES = {
     "who": ["who", "whose", "whom"],
@@ -15,7 +19,7 @@ QUESTION_TYPES = {
 
 class NLPProcessor:
     def __init__(self, model: str = "en_core_web_sm") -> None:
-        print(f"[NLP] Loading spaCy model: {model}")
+        logger.debug("Loading spaCy model: %s", model)
         self.nlp = spacy.load(model)
 
     def classify_question(self, text: str) -> str:

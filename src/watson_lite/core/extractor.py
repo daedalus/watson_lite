@@ -1,3 +1,5 @@
+import logging
+
 from transformers import pipeline
 
 from watson_lite.core.models import (
@@ -7,12 +9,14 @@ from watson_lite.core.models import (
     RankedPassage,
 )
 
+logger = logging.getLogger(__name__)
+
 EXTRACTIVE_MODEL = "deepset/roberta-base-squad2"
 
 
 class ExtractiveReader:
     def __init__(self, model_name: str = EXTRACTIVE_MODEL) -> None:
-        print(f"[Extractor] Loading extractive QA model: {model_name}")
+        logger.debug("Loading extractive QA model: %s", model_name)
         self.qa = pipeline(
             "question-answering",
             model=model_name,
@@ -42,8 +46,8 @@ class ExtractiveReader:
                         rank=rp.rank,
                     )
                 )
-            except Exception as e:
-                print(f"[Extractor] Skipped passage: {e}")
+            except (ValueError, RuntimeError, KeyError) as e:
+                logger.warning("Skipped passage due to extraction error: %s", e)
 
         candidates.sort(key=lambda c: c.extraction_score, reverse=True)
         return candidates
