@@ -4,7 +4,8 @@ import logging
 import pathlib
 import sqlite3
 import time
-from typing import Any
+from copy import deepcopy
+from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,52 @@ SENTINEL = object()
 _SENTINEL = SENTINEL  # Backward-compat alias for internal imports.
 
 
-def is_cache_miss(value: Any) -> bool:
+class CacheMetrics(TypedDict):
+    hits: int
+    misses: int
+    hits_by_namespace: dict[str, int]
+    misses_by_namespace: dict[str, int]
+
+
+_cache_metrics: CacheMetrics = {
+    "hits": 0,
+    "misses": 0,
+    "hits_by_namespace": {},
+    "misses_by_namespace": {},
+}
+
+
+def _namespace_for_key(key: str) -> str:
+    prefix = key.split(":", 1)[0].strip().lower()
+    return prefix or "other"
+
+
+def _bump_metric(bucket: str, key: str) -> None:
+    namespace = _namespace_for_key(key)
+    if bucket == "hits_by_namespace":
+        _cache_metrics["hits_by_namespace"][namespace] = (
+            _cache_metrics["hits_by_namespace"].get(namespace, 0) + 1
+        )
+    elif bucket == "misses_by_namespace":
+        _cache_metrics["misses_by_namespace"][namespace] = (
+            _cache_metrics["misses_by_namespace"].get(namespace, 0) + 1
+        )
+
+
+def get_cache_metrics_snapshot() -> CacheMetrics:
+    """Return a deep copy of cache hit/miss counters for KPI reporting."""
+    return deepcopy(_cache_metrics)
+
+
+def reset_cache_metrics() -> None:
+    """Reset cache hit/miss counters used by KPI diagnostics."""
+    _cache_metrics["hits"] = 0
+    _cache_metrics["misses"] = 0
+    _cache_metrics["hits_by_namespace"] = {}
+    _cache_metrics["misses_by_namespace"] = {}
+
+
+def is_cache_miss(value: object) -> bool:
     """Return ``True`` when *value* is the sentinel, i.e. a cache miss.
 
     This is the preferred way to check for a miss; prefer it over an
@@ -42,7 +88,7 @@ class Cache:
         )
 
     @staticmethod
-    def _unwrap(raw: str) -> Any:
+    def _unwrap(raw: str) -> Any:  # noqa: ANN401
         wrapped = json.loads(raw)
         if isinstance(wrapped, dict) and "v" in wrapped:
             return wrapped["v"]
@@ -77,7 +123,11 @@ class Cache:
             "SELECT value FROM cache WHERE key = ?", (key,)
         ).fetchone()
         if row:
+            _cache_metrics["hits"] = int(_cache_metrics["hits"]) + 1
+            _bump_metric("hits_by_namespace", key)
             return self._unwrap(row[0])
+        _cache_metrics["misses"] = int(_cache_metrics["misses"]) + 1
+        _bump_metric("misses_by_namespace", key)
         return SENTINEL
 
     def set(self, key: str, value: Any) -> None:  # noqa: ANN401

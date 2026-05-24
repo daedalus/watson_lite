@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, overload
 
 from transformers import pipeline
-
-if TYPE_CHECKING:
-    from transformers.pipelines.base import Pipeline
 
 from watson_lite.core.models import (
     AnswerCandidate,
@@ -16,6 +13,9 @@ from watson_lite.core.models import (
     RankedPassage,
 )
 from watson_lite.scoring.type_coercion import score_type_coercion
+
+if TYPE_CHECKING:
+    from transformers.pipelines.base import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -42,21 +42,46 @@ def _question_type_bonus(span: str, question_type: str) -> float:
 class ExtractiveReader:
     def __init__(self, model_name: str = EXTRACTIVE_MODEL) -> None:
         logger.debug("Loading extractive QA model: %s", model_name)
-        self.qa: Pipeline = pipeline(  # type: ignore[call-overload]
+        self.qa: Pipeline = pipeline(
             "question-answering",
             model=model_name,
             tokenizer=model_name,
             device=-1,
         )
 
+    @overload
     def extract(
-        self, question: str, passages: list[RankedPassage], top_k: int = 5
+        self,
+        question: str,
+        passages: list[RankedPassage],
+        top_k: int = 5,
+        return_stats: Literal[False] = False,
     ) -> list[AnswerCandidate]:
+        pass
+
+    @overload
+    def extract(
+        self,
+        question: str,
+        passages: list[RankedPassage],
+        top_k: int = 5,
+        return_stats: Literal[True] = True,
+    ) -> tuple[list[AnswerCandidate], int]:
+        pass
+
+    def extract(
+        self,
+        question: str,
+        passages: list[RankedPassage],
+        top_k: int = 5,
+        return_stats: bool = False,
+    ) -> list[AnswerCandidate] | tuple[list[AnswerCandidate], int]:
         candidates = []
+        extraction_errors = 0
 
         for rp in passages[:top_k]:
             try:
-                result = self.qa(  # type: ignore[call-arg]
+                result = self.qa(
                     question=question,
                     context=rp.passage.text,
                     max_answer_len=100,
@@ -73,8 +98,11 @@ class ExtractiveReader:
                 )
             except (ValueError, RuntimeError, KeyError) as e:
                 logger.warning("Skipped passage due to extraction error: %s", e)
+                extraction_errors += 1
 
         candidates.sort(key=lambda c: c.extraction_score, reverse=True)
+        if return_stats:
+            return candidates, extraction_errors
         return candidates
 
 

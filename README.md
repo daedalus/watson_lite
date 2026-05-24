@@ -39,6 +39,38 @@ print(answer.confidence)    # 0.847
 print(answer.source)        # "Eiffel Tower"
 ```
 
+### KPI evaluation
+
+```python
+from watson_lite import WatsonLite
+from watson_lite.evaluation import BenchmarkLabel, evaluate_kpis
+
+watson = WatsonLite()
+answers = [
+    watson.answer("Who designed the Eiffel Tower?", verbose=False),
+    watson.answer("What is the capital of France?", verbose=False),
+]
+
+labels = [
+    BenchmarkLabel(
+        answers=["Gustave Eiffel"],
+        evidence_passages=["designed by Gustave Eiffel"],
+    ),
+    BenchmarkLabel(
+        answers=["Paris"],
+        evidence_passages=["capital of France"],
+    ),
+]
+
+report = evaluate_kpis(answers, labels, recall_k=10, calibration_bins=10)
+print(report.answer_success_rate)
+print(report.latency_p95_s)
+print(report.confidence_calibration_ece)
+```
+
+Each `FinalAnswer` now includes `diagnostics` with stage latencies, cache hit/miss
+counters, retrieval/extraction counts, and top retrieved passages for KPI rollups.
+
 ### Example output
 
 ```

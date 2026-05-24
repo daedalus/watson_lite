@@ -33,7 +33,11 @@ _PARIS_PASSAGE = (
 
 def _make_passages(*texts: str) -> list[Passage]:
     return [
-        Passage(text=t, source=f"Article {i}", url=f"https://en.wikipedia.org/wiki/Article_{i}")
+        Passage(
+            text=t,
+            source=f"Article {i}",
+            url=f"https://en.wikipedia.org/wiki/Article_{i}",
+        )
         for i, t in enumerate(texts)
     ]
 
@@ -41,6 +45,7 @@ def _make_passages(*texts: str) -> list[Passage]:
 # ---------------------------------------------------------------------------
 # Fixture: full pipeline with mocked I/O
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def patched_pipeline():
@@ -124,6 +129,7 @@ def patched_pipeline():
         # --- Wikidata mock (cache miss, no facts) ---
         mock_wd_cache_obj = MagicMock()
         from watson_lite.core.cache import SENTINEL
+
         mock_wd_cache_obj.get_or_sentinel.return_value = SENTINEL
         mock_wd_cache.return_value = mock_wd_cache_obj
         mock_wd_resp = MagicMock()
@@ -138,6 +144,7 @@ def patched_pipeline():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestE2EPipeline:
     def test_answer_returns_final_answer(self, patched_pipeline) -> None:
@@ -176,6 +183,21 @@ class TestE2EPipeline:
             "question_type_bonus",
         ):
             assert key in result.confidence_breakdown, f"Missing key: {key}"
+
+    def test_answer_populates_diagnostics(self, patched_pipeline) -> None:
+        watson, _, _ = patched_pipeline
+        result = watson.answer("Who designed the Eiffel Tower?", verbose=False)
+        diagnostics = result.diagnostics
+        assert diagnostics is not None
+        assert diagnostics.total_latency_s >= 0.0
+        assert diagnostics.stage_latencies_s["nlp"] >= 0.0
+        assert diagnostics.stage_latencies_s["retrieval"] >= 0.0
+        assert diagnostics.stage_latencies_s["ranking"] >= 0.0
+        assert diagnostics.stage_latencies_s["extraction"] >= 0.0
+        assert diagnostics.stage_latencies_s["scoring"] >= 0.0
+        assert diagnostics.passages_fetched > 0
+        assert diagnostics.passages_reranked > 0
+        assert diagnostics.passages_extracted > 0
 
     def test_no_passages_returns_fallback(self, patched_pipeline) -> None:
         watson, mock_fetch, _ = patched_pipeline

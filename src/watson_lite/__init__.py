@@ -2,6 +2,7 @@ __version__ = "0.1.1"
 
 from watson_lite.core.models import (
     AnswerCandidate,
+    AnswerDiagnostics,
     EntityFact,
     FinalAnswer,
     GraphResult,
@@ -16,6 +17,7 @@ __all__ = [
     "Passage",
     "RankedPassage",
     "AnswerCandidate",
+    "AnswerDiagnostics",
     "FinalAnswer",
     "EntityFact",
     "GraphResult",
