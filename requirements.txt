@@ -1,0 +1,25 @@
+
+# NLP
+spacy>=3.7.0
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+
+# Retrieval
+bm25s>=0.1.0
+faiss-cpu>=1.7.4
+sentence-transformers>=2.7.0
+
+# Extractive QA (no generation)
+transformers>=4.40.0
+torch>=2.0.0
+
+# Graph / SPARQL
+SPARQLWrapper>=2.0.0
+
+# Wikipedia
+wikipedia-api>=0.6.0
+requests>=2.31.0
+
+# Utilities
+numpy>=1.26.0
+scipy>=1.13.0
+tqdm>=4.66.0
