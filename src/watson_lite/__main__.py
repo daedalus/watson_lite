@@ -18,7 +18,9 @@ except PackageNotFoundError:
 
 
 def _parse_datasets(value: str) -> tuple[str, ...]:
-    datasets = tuple(item.strip().lower() for item in value.split(",") if item.strip())
+    datasets = tuple(
+        cleaned.lower() for item in value.split(",") if (cleaned := item.strip())
+    )
     if not datasets:
         raise argparse.ArgumentTypeError("At least one dataset must be provided")
     return datasets

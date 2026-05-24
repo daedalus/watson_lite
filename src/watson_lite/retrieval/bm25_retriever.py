@@ -105,7 +105,7 @@ def fetch_mediawiki_passages(
 
 
 def fetch_wikipedia_passages(
-    query: str, top_k: int = WIKI_SEARCH_LIMIT
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
 ) -> list[Passage]:
     return fetch_mediawiki_passages(
         query,
@@ -117,7 +117,7 @@ def fetch_wikipedia_passages(
 
 
 def fetch_wikibooks_passages(
-    query: str, top_k: int = WIKI_SEARCH_LIMIT
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
 ) -> list[Passage]:
     return fetch_mediawiki_passages(
         query,
