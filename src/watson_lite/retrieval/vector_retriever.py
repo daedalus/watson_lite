@@ -1,5 +1,6 @@
 import copy
 import logging
+from typing import Any
 
 import faiss
 import numpy as np
@@ -16,7 +17,7 @@ class VectorRetriever:
     def __init__(self, model_name: str = EMBED_MODEL) -> None:
         logger.debug("Loading embedding model: %s", model_name)
         self.model = SentenceTransformer(model_name)
-        self.index = None
+        self.index: Any = None  # faiss.IndexFlatIP once built
         self.passages: list[Passage] = []
         self.dim = self.model.get_sentence_embedding_dimension()
 

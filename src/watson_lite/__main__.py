@@ -1,7 +1,14 @@
 import logging
 import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 
 from watson_lite.pipeline import WatsonLite
+
+try:
+    _VERSION = pkg_version("watson-lite")
+except PackageNotFoundError:
+    _VERSION = "unknown"
 
 
 def main() -> int:
@@ -14,9 +21,9 @@ def main() -> int:
         watson.answer(question, verbose=True)
         return 0
 
-    print("""
+    print(f"""
 ╔══════════════════════════════════════╗
-║         WatsonLite  v0.1.0           ║
+║         WatsonLite  v{_VERSION:<15} ║
 ║  Extractive QA · No LLM · No Training║
 ╚══════════════════════════════════════╝
 Type a question and press Enter.

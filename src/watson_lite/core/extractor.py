@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 import logging
+import re
+from typing import TYPE_CHECKING
 
 from transformers import pipeline
+
+if TYPE_CHECKING:
+    from transformers.pipelines.base import Pipeline
 
 from watson_lite.core.models import (
     AnswerCandidate,
@@ -13,11 +20,30 @@ logger = logging.getLogger(__name__)
 
 EXTRACTIVE_MODEL = "deepset/roberta-base-squad2"
 
+# Patterns used to apply a small question-type-aware confidence bonus.
+_MULTI_WORD_CAP = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b")
+_YEAR = re.compile(r"\b(1[0-9]{3}|2[0-9]{3})\b")
+_DATE_WORD = re.compile(
+    r"\b(January|February|March|April|May|June|July|August|September|"
+    r"October|November|December|\d{1,2}\s+\w+|\w+\s+\d{4})\b"
+)
+
+
+def _question_type_bonus(span: str, question_type: str) -> float:
+    """Return a small bonus in [0, 0.1] when the span form matches the question type."""
+    if question_type == "who" and _MULTI_WORD_CAP.search(span):
+        return 0.1
+    if question_type == "when" and (
+        _YEAR.search(span) or _DATE_WORD.search(span)
+    ):
+        return 0.1
+    return 0.0
+
 
 class ExtractiveReader:
     def __init__(self, model_name: str = EXTRACTIVE_MODEL) -> None:
         logger.debug("Loading extractive QA model: %s", model_name)
-        self.qa = pipeline(
+        self.qa: Pipeline = pipeline(  # type: ignore[call-overload]
             "question-answering",
             model=model_name,
             tokenizer=model_name,
@@ -31,7 +57,7 @@ class ExtractiveReader:
 
         for rp in passages[:top_k]:
             try:
-                result = self.qa(
+                result = self.qa(  # type: ignore[call-arg]
                     question=question,
                     context=rp.passage.text,
                     max_answer_len=100,
@@ -58,7 +84,7 @@ class ConfidenceScorer:
         self,
         candidates: list[AnswerCandidate],
         graph_results: list[GraphResult],
-        _question_type: str,
+        question_type: str,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -92,11 +118,14 @@ class ConfidenceScorer:
 
         rank_signal = max(0.0, 1.0 - (best.rank - 1) * 0.1)
 
+        qt_bonus = _question_type_bonus(best.span, question_type)
+
         confidence = (
             0.50 * extraction_conf
             + 0.20 * agreement
             + 0.20 * graph_signal
             + 0.10 * rank_signal
+            + qt_bonus
         )
         confidence = round(min(confidence, 1.0), 3)
 
@@ -112,5 +141,6 @@ class ConfidenceScorer:
                 "span_agreement": round(agreement, 3),
                 "graph_corroboration": graph_signal,
                 "passage_rank_signal": round(rank_signal, 3),
+                "question_type_bonus": qt_bonus,
             },
         )

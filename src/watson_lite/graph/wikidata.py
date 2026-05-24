@@ -1,5 +1,6 @@
 import logging
 import time
+from typing import Any
 from urllib.error import HTTPError
 
 import requests
@@ -11,7 +12,54 @@ from watson_lite.core.models import EntityFact, GraphResult
 logger = logging.getLogger(__name__)
 
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
-USER_AGENT = "WatsonLite/1.0 (research project; python)"
+USER_AGENT = "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
+
+# Static mapping of the most frequently encountered Wikidata property IDs to
+# their English labels.  Unknown PIDs fall back to the raw ID string.
+_PROPERTY_LABELS: dict[str, str] = {
+    "P17": "country",
+    "P18": "image",
+    "P19": "place of birth",
+    "P20": "place of death",
+    "P21": "sex or gender",
+    "P22": "father",
+    "P25": "mother",
+    "P26": "spouse",
+    "P27": "country of citizenship",
+    "P30": "continent",
+    "P31": "instance of",
+    "P36": "capital",
+    "P40": "child",
+    "P50": "author",
+    "P57": "director",
+    "P69": "educated at",
+    "P84": "architect",
+    "P101": "field of work",
+    "P106": "occupation",
+    "P108": "employer",
+    "P112": "founded by",
+    "P131": "located in",
+    "P150": "contains",
+    "P159": "headquarters",
+    "P166": "award received",
+    "P169": "chief executive officer",
+    "P170": "creator",
+    "P175": "performer",
+    "P276": "location",
+    "P279": "subclass of",
+    "P463": "member of",
+    "P495": "country of origin",
+    "P527": "has part",
+    "P569": "date of birth",
+    "P570": "date of death",
+    "P571": "inception",
+    "P576": "dissolved",
+    "P577": "publication date",
+    "P625": "coordinate location",
+    "P856": "official website",
+    "P1082": "population",
+    "P2044": "elevation above sea level",
+}
 
 
 class WikidataGraph:
@@ -24,8 +72,8 @@ class WikidataGraph:
         for attempt in range(retries):
             try:
                 self.sparql.setQuery(query)
-                results = self.sparql.query().convert()
-                return results["results"]["bindings"]
+                data: Any = self.sparql.query().convert()
+                return list(data["results"]["bindings"])
             except HTTPError as e:
                 if e.code == 429 and attempt < retries - 1:
                     # Exponential back-off: 2s, 4s, 8s, …
@@ -91,7 +139,8 @@ class WikidataGraph:
         """
         rows = self._run_query(query)
         if rows:
-            uri = rows[0]["item"]["value"]
+            item: Any = rows[0]["item"]
+            uri: str = item["value"]
             return uri.split("/")[-1]
         return None
 
@@ -100,7 +149,7 @@ class WikidataGraph:
         cache_key = f"wd:facts:{qid}"
         cached = cache.get_or_sentinel(cache_key)
         if not is_cache_miss(cached):
-            return [EntityFact(**f) for f in cached]  # type: ignore[arg-type]
+            return [EntityFact(**f) for f in cached]
 
         url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
         try:
@@ -130,21 +179,45 @@ class WikidataGraph:
                     facts.append(
                         EntityFact(
                             entity=qid,
-                            property_label=pid,
+                            property_label=_PROPERTY_LABELS.get(pid, pid),
                             value=val,
                             value_type=datavalue.get("type", "literal"),
                         )
                     )
-            if facts:
-                cache.set(cache_key, [f.__dict__ for f in facts])
+            # Always cache, even for entities with no useful claims, so that
+            # subsequent calls for the same QID do not make redundant requests.
+            cache.set(cache_key, [f.__dict__ for f in facts])
             return facts
         except Exception as e:
             logger.warning("EntityData error: %s", e)
             return []
 
-    def get_related_entities(self, _qid: str, _max_related: int = 10) -> list[str]:
-        # TODO: implement related-entity expansion via Wikidata properties.
-        return []
+    def get_related_entities(self, qid: str, max_related: int = 10) -> list[str]:
+        """Return Wikidata entity IDs referenced in the entity's own claims.
+
+        Extracts QIDs from the already-cached facts for *qid* rather than
+        making additional network requests.  Returns an empty list when the
+        facts for *qid* are not yet in the cache.
+        """
+        cache = get_cache()
+        cache_key = f"wd:facts:{qid}"
+        cached = cache.get_or_sentinel(cache_key)
+        if is_cache_miss(cached):
+            return []
+        facts: list[EntityFact] = [EntityFact(**f) for f in cached]
+        seen: set[str] = set()
+        related: list[str] = []
+        for fact in facts:
+            val = fact.value
+            is_entity = fact.value_type == "wikibase-entityid" or (
+                val.startswith("Q") and val[1:].isdigit()
+            )
+            if is_entity and val not in seen:
+                seen.add(val)
+                related.append(val)
+                if len(related) >= max_related:
+                    break
+        return related
 
     @staticmethod
     def _clean_entity_name(name: str) -> str:
