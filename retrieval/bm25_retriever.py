@@ -9,6 +9,7 @@ import bm25s
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Optional
+from core.cache import get_cache
 
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
@@ -28,6 +29,13 @@ class Passage:
 
 def fetch_wikipedia_passages(query: str, top_k: int = WIKI_SEARCH_LIMIT) -> List[Passage]:
     """Search Wikipedia and chunk article extracts into passages."""
+    cache = get_cache()
+    cache_key = f"wiki:passages:{query.lower().strip()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        print(f"[Cache] Hit: {cache_key}")
+        return [Passage(**p) for p in cached]
+
     # Step 1: search for relevant article titles
     search_params = {
         "action": "query",
@@ -77,6 +85,8 @@ def fetch_wikipedia_passages(query: str, top_k: int = WIKI_SEARCH_LIMIT) -> List
         except Exception as e:
             print(f"[BM25] Extract error for '{title}': {e}")
 
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    print(f"[Cache] Set: {cache_key} ({len(passages)} passages)")
     return passages
 
 

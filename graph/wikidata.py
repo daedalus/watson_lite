@@ -9,6 +9,7 @@ from urllib.error import HTTPError
 from SPARQLWrapper import SPARQLWrapper, JSON
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
+from core.cache import get_cache
 
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "WatsonLite/1.0 (research project; python)"
@@ -57,6 +58,12 @@ class WikidataGraph:
 
     def find_entity_id(self, entity_name: str) -> Optional[str]:
         """Look up Wikidata QID for an entity name via Action API."""
+        cache = get_cache()
+        cache_key = f"wd:entity:{entity_name.lower().strip()}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         url = "https://www.wikidata.org/w/api.php"
         params = {
             "action": "wbsearchentities",
@@ -68,10 +75,15 @@ class WikidataGraph:
             resp = requests.get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=10)
             if resp.status_code == 429:
                 print(f"[Graph] Rate limited on entity search, falling back to SPARQL")
-                return self._find_entity_id_sparql(entity_name)
+                qid = self._find_entity_id_sparql(entity_name)
+                if qid:
+                    cache.set(cache_key, qid)
+                return qid
             data = resp.json()
             if data.get("search"):
-                return data["search"][0]["id"]
+                qid = data["search"][0]["id"]
+                cache.set(cache_key, qid)
+                return qid
         except Exception as e:
             print(f"[Graph] Entity search error: {e}")
         return None
@@ -92,47 +104,53 @@ class WikidataGraph:
         return None
 
     def get_entity_facts(self, qid: str, max_facts: int = 15) -> List[EntityFact]:
-        """Fetch key facts about a Wikidata entity."""
-        query = f"""
-        SELECT ?propLabel ?valueLabel WHERE {{
-          wd:{qid} ?prop ?value .
-          ?propEntity wikibase:directClaim ?prop ;
-                      rdfs:label ?propLabel .
-          FILTER(LANG(?propLabel) = "en")
-          FILTER(!isBlank(?value))
-          SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
-          BIND(STR(?value) AS ?valueLabel)
-        }}
-        LIMIT {max_facts}
-        """
-        rows = self._run_query(query)
-        facts = []
-        for row in rows:
-            prop = row.get("propLabel", {}).get("value", "")
-            val  = row.get("valueLabel", {}).get("value", "")
-            if prop and val:
-                facts.append(EntityFact(
-                    entity=qid,
-                    property_label=prop,
-                    value=val,
-                ))
-        return facts
+        """Fetch key facts about a Wikidata entity via EntityData REST API."""
+        cache = get_cache()
+        cache_key = f"wd:facts:{qid}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return [EntityFact(**f) for f in cached]
+
+        url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
+        try:
+            resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+            if resp.status_code != 200:
+                print(f"[Graph] EntityData error: HTTP {resp.status_code}")
+                return []
+            data = resp.json()
+            entity = data.get("entities", {}).get(qid, {})
+            claims = entity.get("claims", {})
+
+            facts = []
+            seen = set()
+            for pid, claim_list in claims.items():
+                for claim in claim_list[:3]:
+                    mainsnak = claim.get("mainsnak", {})
+                    if mainsnak.get("snaktype") != "value":
+                        continue
+                    datavalue = mainsnak.get("datavalue", {})
+                    val = datavalue.get("value")
+                    if isinstance(val, dict):
+                        val = val.get("id", str(val))
+                    val = str(val)
+                    if val in seen or len(facts) >= max_facts:
+                        continue
+                    seen.add(val)
+                    facts.append(EntityFact(
+                        entity=qid,
+                        property_label=pid,
+                        value=val,
+                        value_type=datavalue.get("type", "literal"),
+                    ))
+            if facts:
+                cache.set(cache_key, [f.__dict__ for f in facts])
+            return facts
+        except Exception as e:
+            print(f"[Graph] EntityData error: {e}")
+            return []
 
     def get_related_entities(self, qid: str, max_related: int = 10) -> List[str]:
-        """Find entities related to this one."""
-        query = f"""
-        SELECT DISTINCT ?relatedLabel WHERE {{
-          {{ wd:{qid} ?p ?related . }}
-          UNION
-          {{ ?related ?p wd:{qid} . }}
-          ?related rdfs:label ?relatedLabel .
-          FILTER(LANG(?relatedLabel) = "en")
-          FILTER(?related != wd:{qid})
-        }}
-        LIMIT {max_related}
-        """
-        rows = self._run_query(query)
-        return [r["relatedLabel"]["value"] for r in rows if "relatedLabel" in r]
+        return []
 
     @staticmethod
     def _clean_entity_name(name: str) -> str:
