@@ -14,6 +14,7 @@ class FeatureConfig:
     question_type_bonus: bool = True
     type_coercion: bool = True
     term_match: bool = True
+    consistency: bool = True
     dataset_sources: tuple[str, ...] = ("wikipedia",)
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
@@ -34,6 +35,7 @@ class FeatureConfig:
             question_type_bonus=False,
             type_coercion=False,
             term_match=False,
+            consistency=False,
         )
 
     def with_feature(self, name: str, enabled: bool) -> FeatureConfig:
@@ -48,4 +50,5 @@ OPTIONAL_FEATURES = (
     "question_type_bonus",
     "type_coercion",
     "term_match",
+    "consistency",
 )

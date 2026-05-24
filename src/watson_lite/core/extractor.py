@@ -12,6 +12,10 @@ from watson_lite.core.models import (
     GraphResult,
     RankedPassage,
 )
+from watson_lite.scoring.consistency import (
+    score_geospatial_consistency,
+    score_temporal_consistency,
+)
 from watson_lite.scoring.term_match import score_term_match
 from watson_lite.scoring.type_coercion import score_type_coercion
 
@@ -120,6 +124,7 @@ class ConfidenceScorer:
         enable_question_type_bonus: bool = True,
         enable_type_coercion: bool = True,
         enable_term_match: bool = True,
+        enable_consistency: bool = True,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -171,14 +176,27 @@ class ConfidenceScorer:
             else 0.0
         )
 
+        temporal_signal = (
+            score_temporal_consistency(candidates, graph_results)
+            if enable_consistency
+            else 0.0
+        )
+        geo_signal = (
+            score_geospatial_consistency(candidates, graph_results)
+            if enable_consistency
+            else 0.0
+        )
+
         confidence = (
             0.35 * extraction_conf
-            + 0.15 * agreement
+            + 0.10 * agreement
             + 0.15 * graph_signal
             + 0.10 * rank_signal
             + qt_bonus
             + 0.15 * type_signal
             + 0.10 * term_match_signal
+            + 0.05 * temporal_signal
+            + 0.05 * geo_signal
         )
         confidence = round(min(confidence, 1.0), 3)
 
@@ -197,5 +215,7 @@ class ConfidenceScorer:
                 "question_type_bonus": qt_bonus,
                 "type_coercion": type_signal,
                 "term_match": round(term_match_signal, 3),
+                "temporal_consistency": temporal_signal,
+                "geospatial_consistency": geo_signal,
             },
         )

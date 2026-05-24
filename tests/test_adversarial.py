@@ -492,7 +492,7 @@ class TestConfidenceScorerAdversarial:
             )
         ]
         answer = scorer.score(candidates, [], "what")
-        assert answer.confidence == 0.25
+        assert answer.confidence == 0.2
 
     def test_all_scores_zero(self) -> None:
         scorer = ConfidenceScorer()
@@ -505,7 +505,7 @@ class TestConfidenceScorerAdversarial:
             ),
         ]
         answer = scorer.score(candidates, [], "what")
-        assert answer.confidence == 0.075
+        assert answer.confidence == 0.05
 
     def test_span_agreement_all_unique(self) -> None:
         scorer = ConfidenceScorer()
@@ -1789,3 +1789,286 @@ class TestTermMatch:
             enable_term_match=False,
         )
         assert answer.confidence_breakdown["term_match"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Temporal & geospatial consistency scoring
+# ---------------------------------------------------------------------------
+
+
+class TestConsistency:
+    def test_temporal_match_from_graph(self) -> None:
+        from watson_lite.scoring.consistency import score_temporal_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="1889",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="inception",
+                        value="1889",
+                    ),
+                ],
+            )
+        ]
+        score = score_temporal_consistency(candidates, graph_results)
+        assert score == 1.0
+
+    def test_temporal_no_match_returns_zero(self) -> None:
+        from watson_lite.scoring.consistency import score_temporal_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="1800",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="inception",
+                        value="1889",
+                    ),
+                ],
+            )
+        ]
+        score = score_temporal_consistency(candidates, graph_results)
+        assert score == 0.0
+
+    def test_temporal_no_year_in_span_returns_zero(self) -> None:
+        from watson_lite.scoring.consistency import score_temporal_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="inception",
+                        value="1889",
+                    ),
+                ],
+            )
+        ]
+        score = score_temporal_consistency(candidates, graph_results)
+        assert score == 0.0
+
+    def test_temporal_with_no_temporal_facts_returns_zero(self) -> None:
+        from watson_lite.scoring.consistency import score_temporal_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="1889",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="architect",
+                        value="Gustave Eiffel",
+                    ),
+                ],
+            )
+        ]
+        score = score_temporal_consistency(candidates, graph_results)
+        assert score == 0.0
+
+    def test_temporal_empty_candidates_returns_zero(self) -> None:
+        from watson_lite.scoring.consistency import score_temporal_consistency
+
+        assert score_temporal_consistency([], []) == 0.0
+
+    def test_geo_match_from_graph(self) -> None:
+        from watson_lite.scoring.consistency import score_geospatial_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="France",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="country",
+                        value="France",
+                    ),
+                ],
+            )
+        ]
+        score = score_geospatial_consistency(candidates, graph_results)
+        assert score == pytest.approx(1.0)
+
+    def test_geo_no_match_returns_zero(self) -> None:
+        from watson_lite.scoring.consistency import score_geospatial_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="Germany",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="country",
+                        value="France",
+                    ),
+                ],
+            )
+        ]
+        score = score_geospatial_consistency(candidates, graph_results)
+        assert score == 0.0
+
+    def test_geo_empty_candidates_returns_zero(self) -> None:
+        from watson_lite.scoring.consistency import score_geospatial_consistency
+
+        assert score_geospatial_consistency([], []) == 0.0
+
+    def test_geo_case_insensitive_match(self) -> None:
+        from watson_lite.scoring.consistency import score_geospatial_consistency
+
+        candidates = [
+            AnswerCandidate(
+                span="france",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="country",
+                        value="France",
+                    ),
+                ],
+            )
+        ]
+        score = score_geospatial_consistency(candidates, graph_results)
+        assert score == pytest.approx(1.0)
+
+    def test_integrates_with_confidence_scorer(self) -> None:
+        scorer = ConfidenceScorer()
+        candidates = [
+            AnswerCandidate(
+                span="France",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="country",
+                        value="France",
+                    ),
+                ],
+            )
+        ]
+        answer = scorer.score(candidates, graph_results, "where")
+        assert answer.confidence_breakdown["geospatial_consistency"] > 0
+        assert "temporal_consistency" in answer.confidence_breakdown
+
+    def test_disabled_via_flag(self) -> None:
+        scorer = ConfidenceScorer()
+        candidates = [
+            AnswerCandidate(
+                span="France",
+                source="s",
+                url="",
+                passage="",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        graph_results = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="country",
+                        value="France",
+                    ),
+                ],
+            )
+        ]
+        answer = scorer.score(
+            candidates,
+            graph_results,
+            "where",
+            enable_consistency=False,
+        )
+        assert answer.confidence_breakdown["geospatial_consistency"] == 0.0
+        assert answer.confidence_breakdown["temporal_consistency"] == 0.0

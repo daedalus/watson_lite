@@ -82,9 +82,7 @@ def fetch_mediawiki_passages(
                         Passage(
                             text=chunk,
                             source=title,
-                            url=(
-                                f"{article_base_url}/{title.replace(' ', '_')}"
-                            ),
+                            url=(f"{article_base_url}/{title.replace(' ', '_')}"),
                         )
                     )
             return chunks
