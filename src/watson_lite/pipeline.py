@@ -4,6 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from watson_lite.core.cache import CacheMetrics, get_cache_metrics_snapshot
+from watson_lite.core.fallbacks import is_fallback_answer_text
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer, GraphResult, Passage
 from watson_lite.core.nlp import NLPProcessor
@@ -107,10 +108,7 @@ class WatsonLite:
 
     @staticmethod
     def _is_fallback_answer(answer: FinalAnswer) -> bool:
-        return answer.answer in {
-            "No answer found",
-            "Could not retrieve relevant passages.",
-        }
+        return is_fallback_answer_text(answer.answer)
 
     def answer(  # pylint: disable=too-many-statements
         self, question: str, verbose: bool = True
