@@ -256,6 +256,8 @@ class WikidataGraph:
         related: list[str] = []
         for fact in facts:
             val = fact.value
+            if not isinstance(val, str):
+                continue
             is_entity = fact.value_type == "wikibase-entityid" or (
                 val.startswith("Q") and val[1:].isdigit()
             )

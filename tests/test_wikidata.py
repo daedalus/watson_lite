@@ -360,9 +360,28 @@ class TestWikidataGraph:
                 "value": "Paris",
                 "value_type": "string",
             },
+            {
+                "entity": "Q243",
+                "property_label": "described at URL",
+                "value": "Q123",
+                "value_type": "string",
+            },
+            {
+                "entity": "Q243",
+                "property_label": "creator",
+                "value": "Q937",
+                "value_type": "wikibase-entityid",
+            },
+            {
+                "entity": "Q243",
+                "property_label": "inception",
+                "value": "1889",
+                "value_type": "time",
+            },
         ]
         related = self.graph.get_related_entities("Q243")
-        assert related == ["Q937"]
+        assert related == ["Q937", "Q123"]
+        assert related.count("Q937") == 1
 
     def test_get_related_entities_max_limited(self) -> None:
         """max_related is honoured."""

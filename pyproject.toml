@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "watson-lite"
-version = "0.1.0"
+version = "0.1.1"
 description = "Extractive QA pipeline — no LLM, no training. BM25 + FAISS + Wikidata + cross-encoder re-ranking + roberta-base-squad2."
 readme = "README.md"
 requires-python = ">=3.11"
