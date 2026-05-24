@@ -18,6 +18,7 @@ except PackageNotFoundError:
 
 
 def _parse_datasets(value: str) -> tuple[str, ...]:
+    """Parse comma-separated dataset names into a normalized tuple."""
     datasets = tuple(
         cleaned.lower() for item in value.split(",") if (cleaned := item.strip())
     )

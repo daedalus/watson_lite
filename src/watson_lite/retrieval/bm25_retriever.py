@@ -29,6 +29,7 @@ def fetch_mediawiki_passages(
     article_base_url: str,
     cache_namespace: str,
 ) -> list[Passage]:
+    """Fetch and chunk passages from a MediaWiki API-backed dataset."""
     cache = get_cache()
     cache_key = f"{cache_namespace}:passages:{query.lower().strip()}"
     cached = cache.get_or_sentinel(cache_key)
@@ -107,6 +108,7 @@ def fetch_mediawiki_passages(
 def fetch_wikipedia_passages(
     query: str, *, top_k: int = WIKI_SEARCH_LIMIT
 ) -> list[Passage]:
+    """Fetch passages from Wikipedia using the generic MediaWiki fetcher."""
     return fetch_mediawiki_passages(
         query,
         top_k=top_k,
@@ -119,6 +121,7 @@ def fetch_wikipedia_passages(
 def fetch_wikibooks_passages(
     query: str, *, top_k: int = WIKI_SEARCH_LIMIT
 ) -> list[Passage]:
+    """Fetch passages from Wikibooks using the generic MediaWiki fetcher."""
     return fetch_mediawiki_passages(
         query,
         top_k=top_k,
