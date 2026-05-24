@@ -809,8 +809,8 @@ class TestQuestionTypeBonus:
 
 class TestCacheCoverage:
     def test_default_db_path_creates_dir(self) -> None:
-        import tempfile
         from pathlib import Path
+        import tempfile
 
         with (
             patch(
