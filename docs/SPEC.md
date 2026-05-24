@@ -16,7 +16,7 @@ off-the-shelf pretrained models running CPU-only inference.
 - Rerank passages using BM25 + dense vector + cross-encoder fusion
 - Enrich answers with Wikidata structured facts
 - Confidence scoring using multiple signals (extraction score, span agreement, graph corroboration, rank signal)
-- SQLite3 cache for Wikipedia and Wikidata responses
+- SQLite3 cache for Wikipedia, Wikidata, and type-coercion responses with TTL/eviction
 - Interactive CLI and single-shot CLI modes
 - Extractive (span-based) answers — no text generation
 
@@ -126,9 +126,9 @@ class ConfidenceScorer:
 
 ```python
 class Cache:
-    def __init__(self, db_path: str = "watson_lite_cache.sqlite3") -> None: ...
+    def __init__(self, db_path: str | None = None, *, max_entries: int = 5000) -> None: ...
     def get(self, key: str) -> Any | None: ...
-    def set(self, key: str, value: Any) -> None: ...
+    def set(self, key: str, value: Any, *, ttl_seconds: int | None = None) -> None: ...
     def clear(self) -> None: ...
     def close(self) -> None: ...
 ```
@@ -246,4 +246,4 @@ class ParsedQuestion:
 - Cross-encoder reranks top 50 RRF candidates
 - Extractive reader processes top 5 ranked passages per sub-question
 - Maximum 15 facts per Wikidata entity
-- Cache database stored as `watson_lite_cache.sqlite3` in project root
+- Cache database stored under user cache directory (`~/.cache/watson_lite/watson_lite_cache.sqlite3`)

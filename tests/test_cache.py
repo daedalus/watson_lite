@@ -59,6 +59,36 @@ class TestCache:
         assert self.cache.get_or_sentinel("null") is None
         assert self.cache.get_or_sentinel("absent") is SENTINEL
 
+    def test_ttl_expiry(self) -> None:
+        self.cache.set("ttl:key", "v", ttl_seconds=1)
+        assert self.cache.get("ttl:key") == "v"
+        assert self.cache.get_or_sentinel("ttl:key") == "v"
+        self.cache.con.execute(
+            "UPDATE cache SET expires_at = ? WHERE key = ?",
+            (0.0, self.cache.canonicalize_key("ttl:key")),
+        )
+        self.cache.con.commit()
+        assert self.cache.get("ttl:key") is None
+        assert self.cache.get_or_sentinel("ttl:key") is SENTINEL
+
+    def test_key_canonicalization_whitespace(self) -> None:
+        self.cache.set("wiki:  paris   france  ", "value")
+        assert self.cache.get("wiki:paris france") == "value"
+        assert self.cache.get("WIKI:   paris france   ") == "value"
+
+    def test_prunes_oldest_entries_when_limit_exceeded(self) -> None:
+        fd, tmp_path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        limited = Cache(tmp_path, max_entries=2)
+        limited.set("k1", "v1")
+        limited.set("k2", "v2")
+        limited.set("k3", "v3")
+        assert limited.get("k1") is None
+        assert limited.get("k2") == "v2"
+        assert limited.get("k3") == "v3"
+        limited.close()
+        os.unlink(tmp_path)
+
     def test_cache_metrics_updates_are_thread_safe(self) -> None:
         reset_cache_metrics()
 
