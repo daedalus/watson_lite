@@ -67,6 +67,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Enable/disable type coercion signal",
     )
+    parser.add_argument(
+        "--term-match",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable IDF-weighted term match signal",
+    )
+    parser.add_argument(
+        "--consistency",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable temporal/geospatial consistency checks",
+    )
 
     parser.add_argument("--wiki-top-k", type=int, default=5)
     parser.add_argument(
@@ -103,6 +115,8 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         cross_encoder_reranking=args.cross_encoder_reranking,
         question_type_bonus=args.question_type_bonus,
         type_coercion=args.type_coercion,
+        term_match=args.term_match,
+        consistency=args.consistency,
         dataset_sources=args.datasets,
         wikipedia_top_k_per_query=args.wiki_top_k,
         retrieval_top_k=args.retrieval_top_k,
