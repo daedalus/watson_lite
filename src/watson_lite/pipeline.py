@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def _passages_hash(passages: list[Passage]) -> str:
     """Return a compact hash that identifies a list of passages by content."""
-    return hashlib.md5("".join(p.text for p in passages).encode()).hexdigest()
+    return hashlib.sha256("".join(p.text for p in passages).encode()).hexdigest()
 
 
 class WatsonLite:
