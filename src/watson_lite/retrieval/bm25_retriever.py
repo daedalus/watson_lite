@@ -359,7 +359,7 @@ def fetch_wikibooks_passages(
     )
 
 
-def _resolve_elasticsearch_setting(value: str | None, env_name: str) -> str:
+def _get_elasticsearch_setting_or_env(value: str | None, env_name: str) -> str:
     if value is not None:
         return value.strip()
     return os.getenv(env_name, "").strip()
@@ -374,6 +374,7 @@ def _elasticsearch_headers() -> dict[str, str]:
 
 
 def _extract_text_from_hit(source_payload: dict[str, Any]) -> str:
+    """Return document text from common Elasticsearch content field fallbacks."""
     text = (
         source_payload.get("text")
         or source_payload.get("content")
@@ -388,13 +389,13 @@ def _extract_text_from_hit(source_payload: dict[str, Any]) -> str:
 
 
 def _to_passage(
-    item: dict[str, Any], source_payload: dict[str, Any], resolved_index: str, text: str
+    hit: dict[str, Any], source_payload: dict[str, Any], resolved_index: str, text: str
 ) -> Passage:
     source = (
         source_payload.get("title")
         or source_payload.get("source")
         or source_payload.get("name")
-        or f"{resolved_index}:{item.get('_id', 'unknown')}"
+        or f"{resolved_index}:{hit.get('_id', 'unknown')}"
     )
     url = source_payload.get("url") or source_payload.get("source_url") or ""
     if not isinstance(source, str):
@@ -412,8 +413,12 @@ def fetch_elasticsearch_passages(
     index: str | None = None,
 ) -> list[Passage]:
     """Fetch passages from an Elasticsearch index."""
-    resolved_base_url = _resolve_elasticsearch_setting(base_url, ELASTICSEARCH_URL_ENV)
-    resolved_index = _resolve_elasticsearch_setting(index, ELASTICSEARCH_INDEX_ENV)
+    resolved_base_url = _get_elasticsearch_setting_or_env(
+        base_url, ELASTICSEARCH_URL_ENV
+    )
+    resolved_index = _get_elasticsearch_setting_or_env(
+        index, ELASTICSEARCH_INDEX_ENV
+    )
     if not resolved_base_url or not resolved_index:
         logger.warning(
             "Elasticsearch dataset requested but not configured."
@@ -478,10 +483,10 @@ def fetch_elasticsearch_passages(
 
     passages: list[Passage] = []
     seen_chunks: set[str] = set()
-    for item in hits:
-        if not isinstance(item, dict):
+    for hit in hits:
+        if not isinstance(hit, dict):
             continue
-        source_payload = item.get("_source")
+        source_payload = hit.get("_source")
         if not isinstance(source_payload, dict):
             continue
         text = _extract_text_from_hit(source_payload)
@@ -491,7 +496,7 @@ def fetch_elasticsearch_passages(
         if dedup_key in seen_chunks:
             continue
         seen_chunks.add(dedup_key)
-        passages.append(_to_passage(item, source_payload, resolved_index, text))
+        passages.append(_to_passage(hit, source_payload, resolved_index, text))
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
