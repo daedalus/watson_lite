@@ -44,3 +44,13 @@ def test_bidirectional_score_handles_empty_keywords() -> None:
     engine.query.return_value = [Passage(text="Anything", source="wiki", url="u")]
 
     assert bidirectional_score("Paris", "is the and or", engine) == 0.0
+
+
+def test_bidirectional_score_empty_passages_returns_zero() -> None:
+    """When the dataset engine returns no passages, score should be 0.0."""
+    engine = MagicMock()
+    engine.query.return_value = []
+
+    score = bidirectional_score("Eiffel", "Who built the Eiffel Tower?", engine)
+
+    assert score == 0.0
