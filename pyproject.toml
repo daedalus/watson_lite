@@ -57,6 +57,9 @@ Issues = "https://github.com/daedalus/watson-lite/issues"
 
 [project.scripts]
 watson-lite = "watson_lite.__main__:main"
+fetch-benchmark-squad = "watson_lite.evaluation.benchmarks.squad:main"
+fetch-benchmark-triviaqa = "watson_lite.evaluation.benchmarks.triviaqa:main"
+fetch-benchmark-natural-questions = "watson_lite.evaluation.benchmarks.natural_questions:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/watson_lite"]
