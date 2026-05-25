@@ -223,7 +223,7 @@ class WatsonLite:
 
     @staticmethod
     def _is_fallback_answer(answer: FinalAnswer) -> bool:
-        return bool(is_fallback_answer_text(answer.answer))
+        return cast("bool", is_fallback_answer_text(answer.answer))
 
     @staticmethod
     def _dedupe_passages(passages: list[Passage]) -> list[Passage]:

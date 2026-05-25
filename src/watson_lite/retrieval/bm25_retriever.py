@@ -1,9 +1,9 @@
 import copy
+import html
 import logging
 import os
 import re
 import time
-import xml.etree.ElementTree
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -55,6 +55,8 @@ WIKI_HEADERS = {
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _NON_WORD_RE = re.compile(r"\W+")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_UNSAFE_XML_DTD_RE = re.compile(r"<!\s*(DOCTYPE|ENTITY)\b", re.IGNORECASE)
+_ARXIV_ENTRY_RE = re.compile(r"<entry\b[^>]*>.*?</entry>", re.IGNORECASE | re.DOTALL)
 
 
 def _normalize_passage_text(text: str) -> str:
@@ -89,6 +91,18 @@ def _append_deduped_passage(
         return
     seen_chunks.add(dedup_key)
     passages.append(Passage(text=clean_text, source=source.strip(), url=url.strip()))
+
+
+def _extract_xml_tag_text(payload: str, tag: str) -> str:
+    match = re.search(
+        rf"<{tag}\b[^>]*>(.*?)</{tag}>",
+        payload,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return ""
+    value = _strip_html(match.group(1))
+    return html.unescape(value).strip()
 
 
 def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
@@ -885,23 +899,19 @@ def fetch_arxiv_passages(
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
-    try:
-        root = xml.etree.ElementTree.fromstring(response.text)
-    except Exception as err:  # pragma: no cover - defensive parsing guard
-        logger.warning("arXiv response parse failed: %s", err)
+    xml_payload = response.text
+    if _UNSAFE_XML_DTD_RE.search(xml_payload):
+        logger.warning("arXiv response contains forbidden XML declarations.")
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
-    ns = {"atom": "http://www.w3.org/2005/Atom"}
-    entries = root.findall("atom:entry", ns)
+    entries = _ARXIV_ENTRY_RE.findall(xml_payload)
     passages: list[Passage] = []
     seen_chunks: set[str] = set()
     for entry in entries:
-        title = _stringify(entry.findtext("atom:title", default="", namespaces=ns))
-        summary = _stringify(entry.findtext("atom:summary", default="", namespaces=ns))
-        url = _stringify(
-            entry.findtext("atom:id", default="https://arxiv.org", namespaces=ns)
-        )
+        title = _stringify(_extract_xml_tag_text(entry, "title"))
+        summary = _stringify(_extract_xml_tag_text(entry, "summary"))
+        url = _stringify(_extract_xml_tag_text(entry, "id")) or "https://arxiv.org"
         source = title or "arXiv"
         chunks = _chunk_text(summary)
         if chunks:
