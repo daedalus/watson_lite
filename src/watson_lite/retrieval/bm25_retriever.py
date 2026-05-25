@@ -441,6 +441,52 @@ def _extract_huggingface_row_text(row_payload: dict[str, Any]) -> str:
     return ""
 
 
+def _parse_huggingface_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return rows/hits/results payload from datasets-server search response."""
+    for field in ("rows", "hits", "results"):
+        rows = data.get(field)
+        if isinstance(rows, list):
+            return [item for item in rows if isinstance(item, dict)]
+    return []
+
+
+def _build_huggingface_passages(
+    rows: list[dict[str, Any]],
+    *,
+    resolved_dataset: str,
+) -> list[Passage]:
+    dataset_url = f"https://huggingface.co/datasets/{resolved_dataset}"
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for item in rows:
+        row_payload = item.get("row")
+        if not isinstance(row_payload, dict):
+            row_payload = item
+        text = _extract_huggingface_row_text(row_payload)
+        if not text:
+            continue
+        dedup_key = _normalize_passage_text(text)
+        if dedup_key in seen_chunks:
+            continue
+        seen_chunks.add(dedup_key)
+        source = (
+            row_payload.get("title")
+            or row_payload.get("source")
+            or row_payload.get("name")
+            or resolved_dataset
+        )
+        if not isinstance(source, str):
+            source = str(source)
+        passages.append(
+            Passage(
+                text=text,
+                source=source,
+                url=dataset_url,
+            )
+        )
+    return passages
+
+
 def fetch_huggingface_passages(
     query: str,
     *,
@@ -450,6 +496,7 @@ def fetch_huggingface_passages(
     split: str | None = None,
     token: str | None = None,
 ) -> list[Passage]:
+    # pylint: disable=too-many-arguments
     """Fetch passages from a Hugging Face dataset via datasets-server search."""
     resolved_dataset = _get_elasticsearch_setting_or_env(
         dataset, HUGGINGFACE_DATASET_ENV
@@ -518,46 +565,12 @@ def fetch_huggingface_passages(
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
-    raw_rows = data.get("rows")
-    if not isinstance(raw_rows, list):
-        raw_rows = data.get("hits")
-    if not isinstance(raw_rows, list):
-        raw_rows = data.get("results")
-    if not isinstance(raw_rows, list):
+    raw_rows = _parse_huggingface_rows(data)
+    if not raw_rows:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
-    dataset_url = f"https://huggingface.co/datasets/{resolved_dataset}"
-    passages: list[Passage] = []
-    seen_chunks: set[str] = set()
-    for item in raw_rows:
-        if not isinstance(item, dict):
-            continue
-        row_payload = item.get("row")
-        if not isinstance(row_payload, dict):
-            row_payload = item
-        text = _extract_huggingface_row_text(row_payload)
-        if not text:
-            continue
-        dedup_key = _normalize_passage_text(text)
-        if dedup_key in seen_chunks:
-            continue
-        seen_chunks.add(dedup_key)
-        source = (
-            row_payload.get("title")
-            or row_payload.get("source")
-            or row_payload.get("name")
-            or resolved_dataset
-        )
-        if not isinstance(source, str):
-            source = str(source)
-        passages.append(
-            Passage(
-                text=text,
-                source=source,
-                url=dataset_url,
-            )
-        )
+    passages = _build_huggingface_passages(raw_rows, resolved_dataset=resolved_dataset)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
