@@ -149,6 +149,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=("wikipedia",),
         help="Comma-separated datasets to query (e.g. wikipedia,wikibooks)",
     )
+    parser.add_argument(
+        "--elasticsearch-url",
+        type=str,
+        default=None,
+        help="Elasticsearch base URL (used when datasets include 'elasticsearch')",
+    )
+    parser.add_argument(
+        "--elasticsearch-index",
+        type=str,
+        default=None,
+        help="Elasticsearch index name (used when datasets include 'elasticsearch')",
+    )
     parser.add_argument("--retrieval-top-k", type=int, default=20)
     parser.add_argument("--rerank-top-k", type=int, default=10)
     parser.add_argument("--extract-top-k", type=int, default=5)
@@ -197,6 +209,8 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
     )
     overrides = {
         "dataset_sources": args.datasets,
+        "elasticsearch_url": args.elasticsearch_url,
+        "elasticsearch_index": args.elasticsearch_index,
         "wikipedia_top_k_per_query": args.wiki_top_k,
         "retrieval_top_k": args.retrieval_top_k,
         "rerank_top_k": args.rerank_top_k,

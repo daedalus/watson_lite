@@ -46,6 +46,13 @@ watson-lite --no-vector-retrieval --no-graph-enrichment "Who designed the Eiffel
 # Query across multiple online datasets
 watson-lite --datasets wikipedia,wikibooks "What is Python?"
 
+# Query Elasticsearch
+watson-lite \
+  --datasets elasticsearch \
+  --elasticsearch-url http://localhost:9200 \
+  --elasticsearch-index wiki_passages \
+  "What is Python?"
+
 # Benchmark/eval run from dataset
 watson-lite \
   --benchmark-dataset /path/to/benchmark.json \
@@ -166,6 +173,11 @@ Optional toggles (default enabled):
 - Cross-encoder reranking (`--no-cross-encoder-reranking`)
 - Question-type bonus (`--no-question-type-bonus`)
 - Type-coercion signal (`--no-type-coercion`)
+
+Dataset providers:
+- `wikipedia`
+- `wikibooks`
+- `elasticsearch` (configure with `--elasticsearch-url` and `--elasticsearch-index`, or `WATSON_LITE_ELASTICSEARCH_URL` and `WATSON_LITE_ELASTICSEARCH_INDEX`)
 
 ## Development
 

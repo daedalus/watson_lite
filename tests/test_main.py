@@ -126,6 +126,38 @@ class TestMain:
             assert isinstance(called_config, FeatureConfig)
             assert called_config.dataset_sources == ("wikipedia", "wikibooks")
 
+    def test_main_with_elasticsearch_flags(self) -> None:
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--datasets",
+                    "elasticsearch",
+                    "--elasticsearch-url",
+                    "http://localhost:9200",
+                    "--elasticsearch-index",
+                    "wiki_passages",
+                    "What",
+                    "is",
+                    "Python?",
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+            result = main()
+
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert isinstance(called_config, FeatureConfig)
+            assert called_config.dataset_sources == ("elasticsearch",)
+            assert called_config.elasticsearch_url == "http://localhost:9200"
+            assert called_config.elasticsearch_index == "wiki_passages"
+
     def test_main_benchmark_mode(self) -> None:
         with (
             patch("watson_lite.__main__.run_benchmark_profiles") as mock_run,

@@ -23,6 +23,8 @@ class FeatureConfig:
     iterative_retrieval: bool = True
     semantic_nlp: bool = False
     dataset_sources: tuple[str, ...] = ("wikipedia",)
+    elasticsearch_url: str | None = None
+    elasticsearch_index: str | None = None
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
     rerank_top_k: int = 10
