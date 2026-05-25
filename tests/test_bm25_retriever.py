@@ -411,7 +411,10 @@ class TestAdditionalPublicSources:
         mock_fetch.return_value = []
         fetch_wikiquote_passages("python", top_k=3)
         mock_fetch.assert_called_once()
+        args = mock_fetch.call_args.args
+        assert args == ("python",)
         kwargs = mock_fetch.call_args.kwargs
+        assert kwargs["top_k"] == 3
         assert kwargs["api_url"] == "https://en.wikiquote.org/w/api.php"
         assert kwargs["cache_namespace"] == "wikiquote"
 
@@ -419,7 +422,10 @@ class TestAdditionalPublicSources:
     def test_wikisource_delegates_to_mediawiki(self, mock_fetch: MagicMock) -> None:
         mock_fetch.return_value = []
         fetch_wikisource_passages("python", top_k=3)
+        args = mock_fetch.call_args.args
+        assert args == ("python",)
         kwargs = mock_fetch.call_args.kwargs
+        assert kwargs["top_k"] == 3
         assert kwargs["api_url"] == "https://en.wikisource.org/w/api.php"
         assert kwargs["cache_namespace"] == "wikisource"
 
@@ -427,7 +433,10 @@ class TestAdditionalPublicSources:
     def test_wikinews_delegates_to_mediawiki(self, mock_fetch: MagicMock) -> None:
         mock_fetch.return_value = []
         fetch_wikinews_passages("python", top_k=3)
+        args = mock_fetch.call_args.args
+        assert args == ("python",)
         kwargs = mock_fetch.call_args.kwargs
+        assert kwargs["top_k"] == 3
         assert kwargs["api_url"] == "https://en.wikinews.org/w/api.php"
         assert kwargs["cache_namespace"] == "wikinews"
 
