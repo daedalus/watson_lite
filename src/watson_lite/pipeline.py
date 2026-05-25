@@ -192,7 +192,7 @@ class WatsonLite:
         self._log_step(verbose, 2, "Parallel retrieval (BM25 + Vector)...")
         stage_t0 = time.perf_counter()
         queries = (
-            generate_search_queries(parsed)
+            generate_search_queries(parsed, augment_context=self.config.query_context_augmentation)
             if self.config.query_expansion
             else [parsed.raw]
         )
