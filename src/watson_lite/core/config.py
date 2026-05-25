@@ -25,6 +25,10 @@ class FeatureConfig:
     dataset_sources: tuple[str, ...] = ("wikipedia",)
     elasticsearch_url: str | None = None
     elasticsearch_index: str | None = None
+    huggingface_dataset: str | None = None
+    huggingface_config: str | None = None
+    huggingface_split: str | None = None
+    huggingface_token: str | None = None
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
     rerank_top_k: int = 10

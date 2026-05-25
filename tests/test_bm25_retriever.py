@@ -7,6 +7,7 @@ from watson_lite.core.models import Passage
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
     fetch_elasticsearch_passages,
+    fetch_huggingface_passages,
     fetch_wikipedia_passages,
 )
 
@@ -313,3 +314,73 @@ class TestFetchElasticsearchPassages:
         assert len(result) == 1
         assert result[0].source == "Python"
         assert result[0].text == "Python is a programming language."
+
+
+class TestFetchHuggingFacePassages:
+    def setup_method(self) -> None:
+        self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
+        self.mock_get_cache = self.cache_patcher.start()
+        self.mock_cache = MagicMock()
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
+        self.mock_get_cache.return_value = self.mock_cache
+
+    def teardown_method(self) -> None:
+        self.cache_patcher.stop()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_missing_configuration_returns_empty(self, mock_get: MagicMock) -> None:
+        result = fetch_huggingface_passages(
+            "python",
+            dataset="",
+            split="",
+        )
+        assert result == []
+        mock_get.assert_not_called()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_cache_hit(self, mock_get: MagicMock) -> None:
+        cached = [
+            {
+                "text": "cached text",
+                "source": "ag_news",
+                "url": "https://huggingface.co/datasets/ag_news",
+                "score": 0.0,
+                "rank": 0,
+            }
+        ]
+        self.mock_cache.get_or_sentinel.return_value = cached
+        result = fetch_huggingface_passages(
+            "python",
+            dataset="ag_news",
+            split="train",
+        )
+        assert len(result) == 1
+        assert result[0].text == "cached text"
+        mock_get.assert_not_called()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "rows": [
+                {
+                    "row": {
+                        "title": "Sample row",
+                        "text": "Python is a programming language used for many tasks.",
+                    }
+                }
+            ]
+        }
+        mock_get.return_value = response
+
+        result = fetch_huggingface_passages(
+            "python",
+            dataset="ag_news",
+            config="default",
+            split="train",
+        )
+
+        assert len(result) == 1
+        assert result[0].source == "Sample row"
+        assert result[0].text == "Python is a programming language used for many tasks."
