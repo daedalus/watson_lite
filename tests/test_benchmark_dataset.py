@@ -9,9 +9,7 @@ from watson_lite.evaluation.benchmark_runner import (
     run_benchmark_profiles,
 )
 
-BENCHMARK_DATASET = (
-    Path(__file__).resolve().parents[1] / "benchmarks" / "smoke.json"
-)
+BENCHMARK_DATASET = Path(__file__).resolve().parents[1] / "benchmarks" / "smoke.json"
 
 
 def _answer_for_question(question: str) -> FinalAnswer:

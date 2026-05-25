@@ -7,8 +7,27 @@ from pathlib import Path
 from typing import Any
 
 from watson_lite.core.config import OPTIONAL_FEATURES, FeatureConfig
-from watson_lite.evaluation.kpis import BenchmarkLabel, KPIReport, evaluate_kpis
+from watson_lite.evaluation.kpis import (
+    BenchmarkLabel,
+    KPIReport,
+    NormalizeFn,
+    evaluate_kpis,
+    exact_match,
+    normalize_nq_open,
+    normalize_squad,
+    normalize_triviaqa,
+    token_f1,
+)
 from watson_lite.pipeline import WatsonLite
+
+
+def _normalizer_for_dataset(dataset_path: str) -> NormalizeFn:
+    name = Path(dataset_path).stem.lower()
+    if "triviaqa" in name:
+        return normalize_triviaqa
+    if "natural_questions" in name or "nq" in name:
+        return normalize_nq_open
+    return normalize_squad
 
 
 @dataclass(frozen=True)
@@ -94,21 +113,45 @@ def _run_profile(
     *,
     recall_k: int,
     calibration_bins: int,
+    verbose: bool = False,
+    normalize_fn: NormalizeFn = normalize_squad,
 ) -> BenchmarkProfileResult:
     watson = WatsonLite(config=config)
-    answers = [watson.answer(sample.question, verbose=False) for sample in samples]
-    labels = [
-        BenchmarkLabel(
+    answers = []
+    labels = []
+    total = len(samples)
+    for i, sample in enumerate(samples):
+        ans = watson.answer(sample.question, verbose=False)
+        answers.append(ans)
+        label = BenchmarkLabel(
             answers=sample.answers,
             evidence_passages=sample.evidence_passages,
         )
-        for sample in samples
-    ]
+        labels.append(label)
+        if verbose:
+            em = max(
+                exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers
+            )
+            f1 = max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
+            q = sample.question[:80] + ("…" if len(sample.question) > 80 else "")
+            a = ans.answer[:60] + ("…" if len(ans.answer) > 60 else "")
+            expected = " | ".join(sample.answers[:3])
+            if len(sample.answers) > 3:
+                expected += f" ( +{len(sample.answers) - 3} more)"
+            print(
+                f"[{i + 1}/{total}] "
+                f"EM={em:.2f} F1={f1:.2f} conf={ans.confidence:.2f}\n"
+                f"  Q: {q}\n"
+                f"  A: {a}\n"
+                f"  ≈: {expected}\n"
+            )
+
     report = evaluate_kpis(
         answers,
         labels,
         recall_k=recall_k,
         calibration_bins=calibration_bins,
+        normalize_fn=normalize_fn,
     )
     return BenchmarkProfileResult(profile=profile, config=config, report=report)
 
@@ -195,8 +238,10 @@ def run_benchmark_profiles(  # pylint: disable=too-many-arguments
     ablation_sweep: bool = False,
     regression_check: bool = False,
     thresholds: RegressionThresholds | None = None,
+    verbose: bool = False,
 ) -> tuple[list[BenchmarkProfileResult], list[dict[str, float | str]]]:
     samples = load_benchmark_dataset(dataset_path)
+    normalize_fn = _normalizer_for_dataset(dataset_path)
     profiles = build_ablation_profiles() if ablation_sweep else {"configured": config}
     if regression_check and "baseline" not in profiles:
         profiles = {"baseline": FeatureConfig.baseline(), **profiles}
@@ -210,6 +255,8 @@ def run_benchmark_profiles(  # pylint: disable=too-many-arguments
                 samples,
                 recall_k=recall_k,
                 calibration_bins=calibration_bins,
+                verbose=verbose,
+                normalize_fn=normalize_fn,
             )
         )
 

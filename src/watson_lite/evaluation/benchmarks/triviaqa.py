@@ -11,8 +11,8 @@ from watson_lite.evaluation.benchmarks._download_utils import (
 )
 
 TRIVIAQA_RC_URL = "https://nlp.cs.washington.edu/triviaqa/data/triviaqa-rc.tar.gz"
-TRIVIAQA_DEV_PATH = "triviaqa-rc/qa/wikipedia-dev.json"
-TRIVIAQA_TEST_PATH = "triviaqa-rc/qa/wikipedia-test.json"
+TRIVIAQA_DEV_PATH = "qa/wikipedia-dev.json"
+TRIVIAQA_TEST_PATH = "qa/wikipedia-test.json"
 
 
 def _convert_triviaqa(
