@@ -20,7 +20,6 @@ for ds_path, json_path, csv_path in datasets:
         config=FeatureConfig.baseline(),
         output_json_path=json_path,
         output_csv_path=csv_path,
-        verbose=False,
     )
     for r in results:
         m = r.report

@@ -143,7 +143,6 @@ def _run_profile(
     *,
     recall_k: int,
     calibration_bins: int,
-    verbose: bool = False,
     normalize_fn: NormalizeFn = normalize_squad,
 ) -> BenchmarkProfileResult:
     watson = WatsonLite(config=config)
@@ -156,11 +155,11 @@ def _run_profile(
         cached = cache.get_or_sentinel(key)
         if cached is not SENTINEL:
             ans = _deserialize_answer(cached)
-            print(f"[{i + 1}/{total}] [benchmark cache HIT]  {sample.question[:60]}…")
+            tag = "HIT"
         else:
             ans = watson.answer(sample.question, verbose=False)
             cache.set(key, _serialize_answer(ans))
-            print(f"[{i + 1}/{total}] [benchmark cache MISS] {sample.question[:60]}…")
+            tag = "MISS"
 
         answers.append(ans)
         labels.append(
@@ -170,19 +169,19 @@ def _run_profile(
             )
         )
 
-        if verbose:
-            max(
-                exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers
-            )
-            max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
-            q = sample.question[:80] + ("…" if len(sample.question) > 80 else "")
-            a = ans.answer[:60] + ("…" if len(ans.answer) > 60 else "")
-            expected = " | ".join(sample.answers[:3])
-            if len(sample.answers) > 3:
-                expected += f" ( +{len(sample.answers) - 3} more)"
-            print(
-                f"  Q: {q}\n  A: {a}\n  ≈: {expected}\n"
-            )
+        em = max(
+            exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers
+        )
+        f1 = max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
+        q = sample.question[:80] + ("…" if len(sample.question) > 80 else "")
+        a = ans.answer[:60] + ("…" if len(ans.answer) > 60 else "")
+        expected = " | ".join(sample.answers[:3])
+        if len(sample.answers) > 3:
+            expected += f" ( +{len(sample.answers) - 3} more)"
+        print(
+            f"[{i + 1}/{total}] EM={em:.2f} F1={f1:.2f} conf={ans.confidence:.2f} [{tag}]\n"
+            f"  Q: {q}\n  A: {a}\n  ≈: {expected}\n"
+        )
 
     report = evaluate_kpis(
         answers,
@@ -276,7 +275,6 @@ def run_benchmark_profiles(  # pylint: disable=too-many-arguments
     ablation_sweep: bool = False,
     regression_check: bool = False,
     thresholds: RegressionThresholds | None = None,
-    verbose: bool = False,
 ) -> tuple[list[BenchmarkProfileResult], list[dict[str, float | str]]]:
     samples = load_benchmark_dataset(dataset_path)
     normalize_fn = _normalizer_for_dataset(dataset_path)
@@ -293,7 +291,6 @@ def run_benchmark_profiles(  # pylint: disable=too-many-arguments
                 samples,
                 recall_k=recall_k,
                 calibration_bins=calibration_bins,
-                verbose=verbose,
                 normalize_fn=normalize_fn,
             )
         )
