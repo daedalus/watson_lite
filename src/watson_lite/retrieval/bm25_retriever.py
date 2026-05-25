@@ -364,7 +364,7 @@ def fetch_wikibooks_passages(
     )
 
 
-def _get_elasticsearch_setting_or_env(value: str | None, env_name: str) -> str:
+def _get_setting_or_env(value: str | None, env_name: str) -> str:
     """Return an explicit setting, or fall back to the corresponding env var."""
     if value is not None:
         return value.strip()
@@ -413,10 +413,10 @@ def _to_passage(
     return Passage(text=text, source=source, url=url)
 
 
-def _huggingface_headers(token: str) -> dict[str, str]:
+def _huggingface_headers(token: str | None) -> dict[str, str]:
     """Build Hugging Face headers, adding Bearer auth when configured."""
     headers: dict[str, str] = {"Accept": "application/json"}
-    stripped = token.strip()
+    stripped = (token or "").strip()
     if stripped:
         headers["Authorization"] = f"Bearer {stripped}"
     return headers
@@ -498,12 +498,12 @@ def fetch_huggingface_passages(
 ) -> list[Passage]:
     # pylint: disable=too-many-arguments
     """Fetch passages from a Hugging Face dataset via datasets-server search."""
-    resolved_dataset = _get_elasticsearch_setting_or_env(
+    resolved_dataset = _get_setting_or_env(
         dataset, HUGGINGFACE_DATASET_ENV
     )
-    resolved_config = _get_elasticsearch_setting_or_env(config, HUGGINGFACE_CONFIG_ENV)
-    resolved_split = _get_elasticsearch_setting_or_env(split, HUGGINGFACE_SPLIT_ENV)
-    resolved_token = _get_elasticsearch_setting_or_env(token, HUGGINGFACE_TOKEN_ENV)
+    resolved_config = _get_setting_or_env(config, HUGGINGFACE_CONFIG_ENV)
+    resolved_split = _get_setting_or_env(split, HUGGINGFACE_SPLIT_ENV)
+    resolved_token = _get_setting_or_env(token, HUGGINGFACE_TOKEN_ENV)
 
     if not resolved_dataset or not resolved_split:
         logger.warning(
@@ -585,10 +585,10 @@ def fetch_elasticsearch_passages(
     index: str | None = None,
 ) -> list[Passage]:
     """Fetch passages from an Elasticsearch index."""
-    resolved_base_url = _get_elasticsearch_setting_or_env(
+    resolved_base_url = _get_setting_or_env(
         base_url, ELASTICSEARCH_URL_ENV
     )
-    resolved_index = _get_elasticsearch_setting_or_env(
+    resolved_index = _get_setting_or_env(
         index, ELASTICSEARCH_INDEX_ENV
     )
     if not resolved_base_url or not resolved_index:

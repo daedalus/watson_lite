@@ -186,7 +186,10 @@ Dataset providers:
 - `wikipedia`
 - `wikibooks`
 - `elasticsearch` (configure with `--elasticsearch-url` and `--elasticsearch-index`, or `WATSON_LITE_ELASTICSEARCH_URL` and `WATSON_LITE_ELASTICSEARCH_INDEX`)
-- `huggingface` (configure with `--huggingface-dataset` and `--huggingface-split`; optional `--huggingface-config`, `--huggingface-token`, or env vars `WATSON_LITE_HUGGINGFACE_DATASET`, `WATSON_LITE_HUGGINGFACE_SPLIT`, `WATSON_LITE_HUGGINGFACE_CONFIG`, `WATSON_LITE_HUGGINGFACE_TOKEN`)
+- `huggingface`
+  - required: `--huggingface-dataset`, `--huggingface-split`
+  - optional: `--huggingface-config`, `--huggingface-token`
+  - env vars: `WATSON_LITE_HUGGINGFACE_DATASET`, `WATSON_LITE_HUGGINGFACE_SPLIT`, `WATSON_LITE_HUGGINGFACE_CONFIG`, `WATSON_LITE_HUGGINGFACE_TOKEN`
 
 ## Development
 
