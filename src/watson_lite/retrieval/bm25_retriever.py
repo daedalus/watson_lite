@@ -487,7 +487,7 @@ def _build_huggingface_passages(
     return passages
 
 
-def fetch_huggingface_passages(
+def fetch_huggingface_passages(  # pylint: disable=too-many-arguments
     query: str,
     *,
     top_k: int = WIKI_SEARCH_LIMIT,
@@ -496,7 +496,6 @@ def fetch_huggingface_passages(
     split: str | None = None,
     token: str | None = None,
 ) -> list[Passage]:
-    # pylint: disable=too-many-arguments
     """Fetch passages from a Hugging Face dataset via datasets-server search."""
     resolved_dataset = _get_setting_or_env(
         dataset, HUGGINGFACE_DATASET_ENV
