@@ -360,12 +360,14 @@ def fetch_wikibooks_passages(
 
 
 def _get_elasticsearch_setting_or_env(value: str | None, env_name: str) -> str:
+    """Return an explicit setting, or fall back to the corresponding env var."""
     if value is not None:
         return value.strip()
     return os.getenv(env_name, "").strip()
 
 
 def _elasticsearch_headers() -> dict[str, str]:
+    """Build Elasticsearch HTTP headers, adding ApiKey auth when configured."""
     headers: dict[str, str] = {"Content-Type": "application/json"}
     api_key = os.getenv(ELASTICSEARCH_API_KEY_ENV, "").strip()
     if api_key:
@@ -374,7 +376,7 @@ def _elasticsearch_headers() -> dict[str, str]:
 
 
 def _extract_text_from_hit(source_payload: dict[str, Any]) -> str:
-    """Return document text from common Elasticsearch content field fallbacks."""
+    """Return first non-empty text from: text, content, body, passage, snippet."""
     text = (
         source_payload.get("text")
         or source_payload.get("content")
@@ -391,6 +393,7 @@ def _extract_text_from_hit(source_payload: dict[str, Any]) -> str:
 def _to_passage(
     hit: dict[str, Any], source_payload: dict[str, Any], resolved_index: str, text: str
 ) -> Passage:
+    """Map an Elasticsearch hit to Passage using title/source/name and url/source_url."""
     source = (
         source_payload.get("title")
         or source_payload.get("source")
