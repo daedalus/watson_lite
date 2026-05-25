@@ -15,6 +15,7 @@ from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
     fetch_wikibooks_passages,
+    fetch_wikipedia_page_by_title,
     fetch_wikipedia_passages,
 )
 from watson_lite.retrieval.dataset_query_engine import (
@@ -208,6 +209,16 @@ class WatsonLite:
                 if dedup_key not in seen_texts:
                     seen_texts.add(dedup_key)
                     all_passages.append(p)
+
+        entity_names = [str(e["text"]) for e in parsed.entities]
+        if entity_names:
+            self._log_detail(verbose, "Entity direct page fetch: %s", entity_names)
+            for entity_text in entity_names:
+                for p in fetch_wikipedia_page_by_title(entity_text):
+                    dedup_key = _passage_dedup_key(p)
+                    if dedup_key not in seen_texts:
+                        seen_texts.add(dedup_key)
+                        all_passages.append(p)
 
         passages = all_passages
 

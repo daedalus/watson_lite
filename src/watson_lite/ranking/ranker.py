@@ -82,9 +82,7 @@ class CrossEncoderReranker:
 class Ranker:
     def __init__(self, *, enable_cross_encoder: bool = True) -> None:
         self.rrf = RRFFusion()
-        self.cross_encoder = (
-            CrossEncoderReranker() if enable_cross_encoder else None
-        )
+        self.cross_encoder = CrossEncoderReranker() if enable_cross_encoder else None
 
     def rank(  # pylint: disable=too-many-arguments
         self,

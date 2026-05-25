@@ -57,6 +57,9 @@ class TestWatsonLite:
 
         self.fetch_patcher = patch("watson_lite.pipeline.fetch_wikipedia_passages")
         self.mock_fetch = self.fetch_patcher.start()
+        self.fetch_page_patcher = patch("watson_lite.pipeline.fetch_wikipedia_page_by_title")
+        self.mock_fetch_page = self.fetch_page_patcher.start()
+        self.mock_fetch_page.return_value = []
 
         self.pipeline = WatsonLite()
 
@@ -112,6 +115,7 @@ class TestWatsonLite:
         for p in self.patches:
             p.stop()
         self.fetch_patcher.stop()
+        self.fetch_page_patcher.stop()
 
     def test_constructor_initializes_all_components(self) -> None:
         self.mock_bm25_cls.assert_called_once()

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+from watson_lite.core.cache import Cache
 from watson_lite.core.config import FeatureConfig
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.benchmark_runner import (
@@ -60,7 +61,11 @@ def test_checked_in_benchmark_dataset_runs_regression_smoke(
             _ = verbose
             return _answer_for_question(question)
 
-    with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+    with (
+        patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+        patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+    ):
+        mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_bd.sqlite3"))
         results, regressions = run_benchmark_profiles(
             dataset_path=str(BENCHMARK_DATASET),
             config=FeatureConfig.baseline(),

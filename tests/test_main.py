@@ -210,8 +210,12 @@ class TestMain:
             result = main()
             assert result == 0
 
-    def test_main_with_minimal_profile(self, capsys: pytest.CaptureFixture[str]) -> None:
-        answer = FinalAnswer(answer="Paris", confidence=0.9, source="Wiki", url="https://e")
+    def test_main_with_minimal_profile(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        answer = FinalAnswer(
+            answer="Paris", confidence=0.9, source="Wiki", url="https://e"
+        )
         with (
             patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
             patch.object(
@@ -318,18 +322,14 @@ class TestMain:
     def test_verbose_passed_to_answer(self) -> None:
         with (
             patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
-            patch.object(
-                sys, "argv", ["prog", "--verbose", "What", "is", "Python?"]
-            ),
+            patch.object(sys, "argv", ["prog", "--verbose", "What", "is", "Python?"]),
         ):
             mock_wl = MagicMock()
             mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
             result = main()
             assert result == 0
-            mock_wl.answer.assert_called_once_with(
-                "What is Python?", verbose=True
-            )
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
 
     def test_device_passed_to_watsonlite(self) -> None:
         with (

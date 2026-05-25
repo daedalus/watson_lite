@@ -29,6 +29,7 @@ from watson_lite.evaluation.benchmark_runner import (
     build_ablation_profiles,
     run_benchmark_profiles,
 )
+from watson_lite.core.cache import Cache
 from watson_lite.evaluation.kpis import KPIReport
 
 # ---------------------------------------------------------------------------
@@ -86,9 +87,7 @@ def _make_kpi_report(
     )
 
 
-def _write_dataset(
-    path: Path, samples: list[dict[str, Any]] | None = None
-) -> None:
+def _write_dataset(path: Path, samples: list[dict[str, Any]] | None = None) -> None:
     if samples is None:
         samples = [
             {
@@ -176,9 +175,7 @@ class TestBuildAblationProfiles:
         for feature in OPTIONAL_FEATURES:
             cfg = profiles[f"baseline_{feature}_off"]
             differing = [
-                f
-                for f in OPTIONAL_FEATURES
-                if getattr(cfg, f) != getattr(baseline, f)
+                f for f in OPTIONAL_FEATURES if getattr(cfg, f) != getattr(baseline, f)
             ]
             assert differing == [feature], (
                 f"baseline_{feature}_off should differ from baseline only in {feature}"
@@ -192,9 +189,7 @@ class TestBuildAblationProfiles:
         for feature in OPTIONAL_FEATURES:
             cfg = profiles[f"minimal_{feature}_on"]
             differing = [
-                f
-                for f in OPTIONAL_FEATURES
-                if getattr(cfg, f) != getattr(minimal, f)
+                f for f in OPTIONAL_FEATURES if getattr(cfg, f) != getattr(minimal, f)
             ]
             assert differing == [feature], (
                 f"minimal_{feature}_on should differ from minimal only in {feature}"
@@ -224,7 +219,11 @@ class TestAblationSweepExecution:
                 del question, verbose
                 return _final_answer("Paris", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache1.sqlite3"))
             run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -243,7 +242,6 @@ class TestAblationSweepExecution:
         _write_dataset(dataset)
 
         received: list[FeatureConfig] = []
-        custom = FeatureConfig.minimal()
 
         class FakeWatson:
             def __init__(self, config: FeatureConfig) -> None:
@@ -253,11 +251,17 @@ class TestAblationSweepExecution:
                 del question, verbose
                 return _final_answer("Paris", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        custom = FeatureConfig.baseline().with_feature("vector_retrieval", False)
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache2.sqlite3"))
             run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=custom,
                 output_json_path=str(output_json),
+                ablation_sweep=False,
             )
 
         assert received == [custom]
@@ -280,7 +284,11 @@ class TestAblationSweepExecution:
                     return _final_answer("Paris", 0.9)
                 return _final_answer("Wrong", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / ".answer_cache.sqlite3"))
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -319,7 +327,11 @@ class TestAblationOutputArtifacts:
                 del question, verbose
                 return _final_answer("Paris", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_sweep.sqlite3"))
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -356,9 +368,7 @@ class TestAblationOutputArtifacts:
         payload = json.loads(output_json.read_text(encoding="utf-8"))
         assert "regressions" in payload
 
-    def test_output_csv_row_count_matches_profile_count(
-        self, tmp_path: Path
-    ) -> None:
+    def test_output_csv_row_count_matches_profile_count(self, tmp_path: Path) -> None:
         csv_path = tmp_path / "out.csv"
         results, _ = self._run_sweep(tmp_path, csv_path=csv_path)
         with csv_path.open(encoding="utf-8") as fh:
@@ -490,9 +500,7 @@ class TestRegressionDetection:
             config=FeatureConfig.baseline(),
             report=_make_kpi_report(latency_p95=2.0),
         )
-        thresholds = RegressionThresholds(
-            max_latency_p95_s=1.0, metric_tolerance=0.0
-        )
+        thresholds = RegressionThresholds(max_latency_p95_s=1.0, metric_tolerance=0.0)
         issues = _check_regressions(baseline, current, thresholds)
         latency_issues = [i for i in issues if i["metric"] == "latency_p95_s"]
         assert len(latency_issues) == 1
@@ -541,7 +549,11 @@ class TestRegressionDetection:
                 del question, verbose
                 return _final_answer("Paris", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_reg1.sqlite3"))
             results, regressions = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.minimal(),
@@ -571,7 +583,11 @@ class TestRegressionDetection:
                     return _final_answer("Paris", 0.9)
                 return _final_answer("Wrong", 0.8, passages=["unrelated text"])
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_reg2.sqlite3"))
             _, regressions = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.minimal(),
@@ -614,7 +630,11 @@ class TestAblationDatasetFormats:
                 del question, verbose
                 return _final_answer("Alexander Graham Bell", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_fmt1.sqlite3"))
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -650,7 +670,11 @@ class TestAblationDatasetFormats:
                 del question, verbose
                 return _final_answer("4", 0.9)
 
-        with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+        with (
+            patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        ):
+            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_fmt2.sqlite3"))
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
