@@ -4,7 +4,7 @@ Each test class isolates one concern:
 
 * ``TestBuildAblationProfiles``     – feature-flag correctness of every generated profile
 * ``TestAblationSweepExecution``    – WatsonLite receives the right config per profile
-* ``TestAblationOutputArtifacts``   – JSON / CSV artefact structure
+* ``TestAblationOutputArtifacts``   – JSON / CSV artifact structure
 * ``TestRegressionDetection``       – metric-drop helper and _check_regressions logic
 * ``TestAblationDatasetFormats``    – JSONL dataset path exercised end-to-end
 """
@@ -265,7 +265,7 @@ class TestAblationSweepExecution:
     def test_ablation_sweep_produces_distinct_metrics_per_feature(
         self, tmp_path: Path
     ) -> None:
-        """A profile where the answer differs from baseline yields different accuracy."""
+        """Profiles that return a wrong answer score 0 accuracy while baseline scores 1."""
         dataset = tmp_path / "ds.json"
         output_json = tmp_path / "out.json"
         _write_dataset(dataset)
@@ -312,7 +312,8 @@ class TestAblationOutputArtifacts:
         _write_dataset(dataset)
 
         class FakeWatson:
-            def __init__(self, config: FeatureConfig) -> None: ...
+            def __init__(self, config: FeatureConfig) -> None:
+                del config
 
             def answer(self, question: str, verbose: bool = False) -> FinalAnswer:
                 del question, verbose
@@ -606,7 +607,8 @@ class TestAblationDatasetFormats:
         output_json = tmp_path / "out.json"
 
         class FakeWatson:
-            def __init__(self, config: FeatureConfig) -> None: ...
+            def __init__(self, config: FeatureConfig) -> None:
+                del config
 
             def answer(self, question: str, verbose: bool = False) -> FinalAnswer:
                 del question, verbose
@@ -641,7 +643,8 @@ class TestAblationDatasetFormats:
         output_json = tmp_path / "out.json"
 
         class FakeWatson:
-            def __init__(self, config: FeatureConfig) -> None: ...
+            def __init__(self, config: FeatureConfig) -> None:
+                del config
 
             def answer(self, question: str, verbose: bool = False) -> FinalAnswer:
                 del question, verbose
