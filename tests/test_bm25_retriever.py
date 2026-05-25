@@ -6,6 +6,7 @@ from watson_lite.core.cache import SENTINEL
 from watson_lite.core.models import Passage
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
+    fetch_elasticsearch_passages,
     fetch_wikipedia_passages,
 )
 
@@ -239,3 +240,76 @@ class TestBM25Retriever:
             result = self.retriever.fetch_and_retrieve("Paris", top_k=5)
             assert len(result) == 1
             assert result[0].text == "Paris is great."
+
+
+class TestFetchElasticsearchPassages:
+    def setup_method(self) -> None:
+        self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
+        self.mock_get_cache = self.cache_patcher.start()
+        self.mock_cache = MagicMock()
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
+        self.mock_get_cache.return_value = self.mock_cache
+
+    def teardown_method(self) -> None:
+        self.cache_patcher.stop()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.post")
+    def test_missing_configuration_returns_empty(self, mock_post: MagicMock) -> None:
+        result = fetch_elasticsearch_passages(
+            "python",
+            base_url="",
+            index="",
+        )
+        assert result == []
+        mock_post.assert_not_called()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.post")
+    def test_cache_hit(self, mock_post: MagicMock) -> None:
+        cached = [
+            {
+                "text": "cached text",
+                "source": "Doc",
+                "url": "https://example.org/doc",
+                "score": 0.0,
+                "rank": 0,
+            }
+        ]
+        self.mock_cache.get_or_sentinel.return_value = cached
+        result = fetch_elasticsearch_passages(
+            "python",
+            base_url="http://localhost:9200",
+            index="passages",
+        )
+        assert len(result) == 1
+        assert result[0].text == "cached text"
+        mock_post.assert_not_called()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.post")
+    def test_success(self, mock_post: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "hits": {
+                "hits": [
+                    {
+                        "_id": "1",
+                        "_source": {
+                            "title": "Python",
+                            "text": "Python is a programming language.",
+                            "url": "https://example.org/python",
+                        },
+                    }
+                ]
+            }
+        }
+        mock_post.return_value = response
+
+        result = fetch_elasticsearch_passages(
+            "python",
+            base_url="http://localhost:9200",
+            index="passages",
+        )
+
+        assert len(result) == 1
+        assert result[0].source == "Python"
+        assert result[0].text == "Python is a programming language."

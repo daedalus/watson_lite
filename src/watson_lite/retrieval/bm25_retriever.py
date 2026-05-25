@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +17,10 @@ logger = logging.getLogger(__name__)
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
+ELASTICSEARCH_URL_ENV = "WATSON_LITE_ELASTICSEARCH_URL"
+ELASTICSEARCH_INDEX_ENV = "WATSON_LITE_ELASTICSEARCH_INDEX"
+ELASTICSEARCH_API_KEY_ENV = "WATSON_LITE_ELASTICSEARCH_API_KEY"
+ELASTICSEARCH_TIMEOUT_SECONDS = 10
 # Keep chunks comfortably below the reader's context budget while leaving room
 # for sentence overlap, which reduces edge-truncation during extraction.
 CHUNK_SIZE = 180
@@ -352,6 +357,145 @@ def fetch_wikibooks_passages(
         article_base_url="https://en.wikibooks.org/wiki",
         cache_namespace="wikibooks",
     )
+
+
+def _resolve_elasticsearch_setting(value: str | None, env_name: str) -> str:
+    if value is not None:
+        return value.strip()
+    return os.getenv(env_name, "").strip()
+
+
+def _elasticsearch_headers() -> dict[str, str]:
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    api_key = os.getenv(ELASTICSEARCH_API_KEY_ENV, "").strip()
+    if api_key:
+        headers["Authorization"] = f"ApiKey {api_key}"
+    return headers
+
+
+def _extract_text_from_hit(source_payload: dict[str, Any]) -> str:
+    text = (
+        source_payload.get("text")
+        or source_payload.get("content")
+        or source_payload.get("body")
+        or source_payload.get("passage")
+        or source_payload.get("snippet")
+        or ""
+    )
+    if not isinstance(text, str):
+        return ""
+    return text.strip()
+
+
+def _to_passage(
+    item: dict[str, Any], source_payload: dict[str, Any], resolved_index: str, text: str
+) -> Passage:
+    source = (
+        source_payload.get("title")
+        or source_payload.get("source")
+        or source_payload.get("name")
+        or f"{resolved_index}:{item.get('_id', 'unknown')}"
+    )
+    url = source_payload.get("url") or source_payload.get("source_url") or ""
+    if not isinstance(source, str):
+        source = str(source)
+    if not isinstance(url, str):
+        url = str(url)
+    return Passage(text=text, source=source, url=url)
+
+
+def fetch_elasticsearch_passages(
+    query: str,
+    *,
+    top_k: int = WIKI_SEARCH_LIMIT,
+    base_url: str | None = None,
+    index: str | None = None,
+) -> list[Passage]:
+    """Fetch passages from an Elasticsearch index."""
+    resolved_base_url = _resolve_elasticsearch_setting(base_url, ELASTICSEARCH_URL_ENV)
+    resolved_index = _resolve_elasticsearch_setting(index, ELASTICSEARCH_INDEX_ENV)
+    if not resolved_base_url or not resolved_index:
+        logger.warning(
+            "Elasticsearch dataset requested but not configured."
+            " Set %s and %s (or pass config values).",
+            ELASTICSEARCH_URL_ENV,
+            ELASTICSEARCH_INDEX_ENV,
+        )
+        return []
+
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = (
+        "elastic:passages:"
+        f"{resolved_index}:{normalized_query}:top_k={top_k}:base={resolved_base_url}"
+    )
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    endpoint = f"{resolved_base_url.rstrip('/')}/{resolved_index}/_search"
+    payload: dict[str, Any] = {
+        "size": top_k,
+        "query": {
+            "multi_match": {
+                "query": query,
+                "fields": ["title^2", "text", "content", "body", "passage", "snippet"],
+                "type": "best_fields",
+            }
+        },
+    }
+    try:
+        response = requests.post(
+            endpoint,
+            json=payload,
+            headers=_elasticsearch_headers(),
+            timeout=ELASTICSEARCH_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("Elasticsearch request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning(
+            "Elasticsearch request failed: HTTP %s", int(response.status_code)
+        )
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        data = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("Elasticsearch response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    hits = data.get("hits", {}).get("hits", [])
+    if not isinstance(hits, list):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for item in hits:
+        if not isinstance(item, dict):
+            continue
+        source_payload = item.get("_source")
+        if not isinstance(source_payload, dict):
+            continue
+        text = _extract_text_from_hit(source_payload)
+        if not text:
+            continue
+        dedup_key = _normalize_passage_text(text)
+        if dedup_key in seen_chunks:
+            continue
+        seen_chunks.add(dedup_key)
+        passages.append(_to_passage(item, source_payload, resolved_index, text))
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
 
 
 class BM25Retriever:

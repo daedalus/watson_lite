@@ -22,6 +22,7 @@ from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
+    fetch_elasticsearch_passages,
     fetch_wikibooks_passages,
     fetch_wikipedia_page_by_title,
     fetch_wikipedia_passages,
@@ -61,6 +62,15 @@ class WatsonLite:
             providers=(
                 DatasetProvider("wikipedia", fetch_wikipedia_passages),
                 DatasetProvider("wikibooks", fetch_wikibooks_passages),
+                DatasetProvider(
+                    "elasticsearch",
+                    lambda query, *, top_k: fetch_elasticsearch_passages(
+                        query,
+                        top_k=top_k,
+                        base_url=self.config.elasticsearch_url,
+                        index=self.config.elasticsearch_index,
+                    ),
+                ),
             ),
             enabled_datasets=self.config.dataset_sources,
         )
