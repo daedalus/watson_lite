@@ -1,3 +1,5 @@
+benchmarks/*.json
+benchmarks/raw/
 __pycache__/
 *.py[cod]
 *.egg-info/
