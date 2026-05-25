@@ -81,8 +81,10 @@ def _augmented_queries(
             richer_entity_terms.append(chunk if chunk else e)
         _add(" ".join(richer_entity_terms))
     elif parsed.noun_chunks:
-        longest = max(parsed.noun_chunks, key=lambda c: len(c))
-        _add(longest)
+        chunks = list(parsed.noun_chunks)
+        if chunks:
+            longest = max(chunks, key=lambda c: len(c))
+            _add(longest)
 
     # Raw + entity as a focused query
     if entity_texts:

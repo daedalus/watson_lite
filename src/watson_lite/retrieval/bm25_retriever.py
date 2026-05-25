@@ -70,7 +70,9 @@ def _request_json(
             )
         except Exception as err:  # pragma: no cover - defensive network isolation
             if attempt == _REQUEST_MAX_ATTEMPTS - 1:
-                logger.warning("%s request failed (%s): %s", context, cache_namespace, err)
+                logger.warning(
+                    "%s request failed (%s): %s", context, cache_namespace, err
+                )
                 return None
             wait = _REQUEST_BACKOFF_SECONDS * (2**attempt)
             logger.warning(
@@ -105,17 +107,23 @@ def _request_json(
             continue
 
         if status >= 400:
-            logger.warning("%s request failed (%s): HTTP %s", context, cache_namespace, status)
+            logger.warning(
+                "%s request failed (%s): HTTP %s", context, cache_namespace, status
+            )
             return None
 
         try:
             payload = response.json()
         except Exception as err:  # pragma: no cover - defensive parsing guard
-            logger.warning("%s response parse failed (%s): %s", context, cache_namespace, err)
+            logger.warning(
+                "%s response parse failed (%s): %s", context, cache_namespace, err
+            )
             return None
 
         if not isinstance(payload, dict):
-            logger.warning("%s response was not a JSON object (%s)", context, cache_namespace)
+            logger.warning(
+                "%s response was not a JSON object (%s)", context, cache_namespace
+            )
             return None
         return payload
 
@@ -123,7 +131,11 @@ def _request_json(
 
 
 def _chunk_text(text: str) -> list[str]:
-    sentences = [sentence.strip() for sentence in _SENTENCE_SPLIT_RE.split(text) if sentence.strip()]
+    sentences = [
+        sentence.strip()
+        for sentence in _SENTENCE_SPLIT_RE.split(text)
+        if sentence.strip()
+    ]
     if not sentences:
         return []
 
@@ -248,6 +260,72 @@ def fetch_mediawiki_passages(
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
     return passages
+
+
+def fetch_page_by_title(  # pylint: disable=too-many-arguments
+    title: str,
+    *,
+    api_url: str,
+    article_base_url: str,
+    cache_namespace: str,
+) -> list[Passage]:
+    """Fetch and chunk a single Wikipedia/MediaWiki page by its exact title."""
+    cache = get_cache()
+    cache_key = f"{cache_namespace}:page:{title}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    extract_params: dict[str, Any] = {
+        "action": "query",
+        "titles": title,
+        "prop": "extracts",
+        "explaintext": True,
+        "format": "json",
+    }
+    payload = _request_json(
+        api_url,
+        params=extract_params,
+        cache_namespace=cache_namespace,
+        context=f"Page fetch for '{title}'",
+    )
+    if payload is None:
+        return []
+    pages = payload.get("query", {}).get("pages", {})
+    chunks: list[Passage] = []
+    seen_chunks: set[str] = set()
+    article_url = f"{article_base_url}/{title.replace(' ', '_')}"
+    for page in pages.values():
+        text = page.get("extract", "")
+        if not text:
+            continue
+        for chunk in _chunk_text(text):
+            dedup_key = _normalize_passage_text(chunk)
+            if dedup_key in seen_chunks:
+                continue
+            seen_chunks.add(dedup_key)
+            chunks.append(
+                Passage(
+                    text=chunk,
+                    source=title,
+                    url=article_url,
+                )
+            )
+
+    cache.set(cache_key, [p.__dict__ for p in chunks])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(chunks))
+    return chunks
+
+
+def fetch_wikipedia_page_by_title(title: str) -> list[Passage]:
+    """Fetch and chunk a single Wikipedia page by its exact title."""
+    return fetch_page_by_title(
+        title,
+        api_url=WIKI_API,
+        article_base_url="https://en.wikipedia.org/wiki",
+        cache_namespace="wiki",
+    )
 
 
 def fetch_wikipedia_passages(

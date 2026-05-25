@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+from watson_lite.core.cache import Cache
 from watson_lite.core.config import OPTIONAL_FEATURES, FeatureConfig
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.benchmark_runner import (
@@ -64,7 +65,11 @@ def test_run_benchmark_profiles_outputs_files(tmp_path: Path) -> None:
             del question, verbose
             return _final_answer("Paris", 0.9)
 
-    with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+    with (
+        patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+        patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+    ):
+        mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_br1.sqlite3"))
         results, regressions = run_benchmark_profiles(
             dataset_path=str(dataset),
             config=FeatureConfig.baseline(),
@@ -106,7 +111,11 @@ def test_run_benchmark_profiles_detects_regression(tmp_path: Path) -> None:
                 return _final_answer("Paris", 0.9)
             return _final_answer("London", 0.8, passages=["Berlin is in Germany."])
 
-    with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):
+    with (
+        patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
+        patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+    ):
+        mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_br2.sqlite3"))
         _, regressions = run_benchmark_profiles(
             dataset_path=str(dataset),
             config=FeatureConfig.minimal(),

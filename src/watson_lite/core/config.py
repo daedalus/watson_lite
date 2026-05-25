@@ -32,6 +32,7 @@ class FeatureConfig:
         return cls(
             vector_retrieval=False,
             query_expansion=False,
+            query_context_augmentation=False,
             graph_enrichment=False,
             cross_encoder_reranking=False,
             question_type_bonus=False,
