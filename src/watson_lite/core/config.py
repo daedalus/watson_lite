@@ -9,6 +9,7 @@ class FeatureConfig:
 
     vector_retrieval: bool = True
     query_expansion: bool = True
+    query_context_augmentation: bool = True
     graph_enrichment: bool = True
     cross_encoder_reranking: bool = True
     question_type_bonus: bool = True
@@ -47,6 +48,7 @@ class FeatureConfig:
 OPTIONAL_FEATURES = (
     "vector_retrieval",
     "query_expansion",
+    "query_context_augmentation",
     "graph_enrichment",
     "cross_encoder_reranking",
     "question_type_bonus",
