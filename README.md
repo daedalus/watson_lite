@@ -191,10 +191,69 @@ Checked-in benchmark smoke dataset: `benchmarks/smoke.json`
 
 ## Architecture
 
-```
-User Question → NLP (spaCy) → Decomposition → Entity Extraction
-  → Parallel Retrieval (BM25 + FAISS) → Graph (Wikidata)
-  → RRF Fusion → Cross-Encoder Rerank → Span Extraction → Confidence Score
+```text
++------------------+
+|  User question   |
++------------------+
+          |
+          v
++------------------+      +--------------------------+
+| NLPProcessor     |----->| Query expansion +        |
+| - classify       |      | sub-questions            |
+| - extract entity |      +--------------------------+
++------------------+                    |
+          |                             v
+          |               +-----------------------------+
+          |               | DatasetQueryEngine          |
+          |               | - Wikipedia REST API        |
+          |               | - Wikibooks REST API        |
+          |               +-----------------------------+
+          |                             |
+          |                             v
+          |               +-----------------------------+
+          |               | Parallel retrieval          |
+          |               | - BM25Retriever             |
+          |               | - VectorRetriever (FAISS)   |
+          |               +-----------------------------+
+          |                             |
+          |                             v
+          |               +-----------------------------+
+          +-------------> | Ranker                      |
+                          | - RRF fusion                |
+                          | - cross-encoder rerank      |
+                          +-----------------------------+
+                                        |
+                                        v
+                          +-----------------------------+
+                          | ExtractiveReader            |
+                          | - answer span extraction    |
+                          +-----------------------------+
+                                        |
+                                        v
+                          +-----------------------------+
+                          | ConfidenceScorer            |
+                          | - rank / graph / type checks|
+                          +-----------------------------+
+                                        |
+                                        v
+                          +-----------------------------+
+                          | FinalAnswer + diagnostics   |
+                          +-----------------------------+
+
+                +-----------------------------+
+                | WikidataGraph               |
+                | - enrich extracted entities |
+                +-----------------------------+
+                             |
+                             +------------------------>
+                                                      Ranker / scorer
+
+                +-----------------------------+
+                | SQLite cache                |
+                | - dataset fetches           |
+                | - Wikidata lookups          |
+                | - type coercion             |
+                +-----------------------------+
 ```
 
 ## Models Used (all pretrained, inference only)
