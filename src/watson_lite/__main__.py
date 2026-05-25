@@ -147,7 +147,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--datasets",
         type=_parse_datasets,
         default=("wikipedia",),
-        help="Comma-separated datasets to query (e.g. wikipedia,wikibooks)",
+        help=(
+            "Comma-separated datasets to query "
+            "(e.g. wikipedia,wikibooks,huggingface)"
+        ),
     )
     parser.add_argument(
         "--elasticsearch-url",
@@ -160,6 +163,42 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Elasticsearch index name (used when datasets include 'elasticsearch')",
+    )
+    parser.add_argument(
+        "--huggingface-dataset",
+        type=str,
+        default=None,
+        help=(
+            "Hugging Face dataset id "
+            "(used when datasets include 'huggingface')"
+        ),
+    )
+    parser.add_argument(
+        "--huggingface-config",
+        type=str,
+        default=None,
+        help=(
+            "Hugging Face dataset config name "
+            "(optional, used when datasets include 'huggingface')"
+        ),
+    )
+    parser.add_argument(
+        "--huggingface-split",
+        type=str,
+        default=None,
+        help=(
+            "Hugging Face dataset split "
+            "(used when datasets include 'huggingface')"
+        ),
+    )
+    parser.add_argument(
+        "--huggingface-token",
+        type=str,
+        default=None,
+        help=(
+            "Hugging Face auth token "
+            "(optional, used for private/gated datasets)"
+        ),
     )
     parser.add_argument("--retrieval-top-k", type=int, default=20)
     parser.add_argument("--rerank-top-k", type=int, default=10)
@@ -211,6 +250,10 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "dataset_sources": args.datasets,
         "elasticsearch_url": args.elasticsearch_url,
         "elasticsearch_index": args.elasticsearch_index,
+        "huggingface_dataset": args.huggingface_dataset,
+        "huggingface_config": args.huggingface_config,
+        "huggingface_split": args.huggingface_split,
+        "huggingface_token": args.huggingface_token,
         "wikipedia_top_k_per_query": args.wiki_top_k,
         "retrieval_top_k": args.retrieval_top_k,
         "rerank_top_k": args.rerank_top_k,
