@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 try:
     from transformers import pipeline as _hf_pipeline
 except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
-    hf_pipeline: Any = None
+    hf_pipeline: Any | None = None
     _TRANSFORMERS_IMPORT_ERROR: ImportError | None = exc
 else:
     hf_pipeline = _hf_pipeline

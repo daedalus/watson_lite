@@ -13,7 +13,7 @@ else:
 
 if TYPE_CHECKING:
     from spacy.tokens import Doc
-else:  # pragma: no cover - typing fallback when spaCy is not installed
+else:  # pragma: no cover - runtime fallback used when type checking is inactive
     Doc = Any
 
 logger = logging.getLogger(__name__)

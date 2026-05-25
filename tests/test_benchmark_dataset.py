@@ -59,7 +59,7 @@ def test_checked_in_benchmark_dataset_runs_regression_smoke(
             self.config = config
 
         def answer(self, question: str, verbose: bool = False) -> FinalAnswer:
-            del verbose
+            _ = verbose
             return _answer_for_question(question)
 
     with patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson):

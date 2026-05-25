@@ -21,6 +21,7 @@ WIKI_SEARCH_LIMIT = 5
 CHUNK_SIZE = 180
 CHUNK_OVERLAP_SENTENCES = 1
 MIN_CHUNK_WORDS = 20
+FALLBACK_CHUNK_STEP = CHUNK_SIZE // 2
 _NEGATIVE_CACHE_TTL_SECONDS = 300
 _REQUEST_TIMEOUT_SECONDS = 10
 _REQUEST_MAX_ATTEMPTS = 3
@@ -153,7 +154,9 @@ def _chunk_text(text: str) -> list[str]:
 
     words = text.split()
     fallback_chunks = []
-    for i in range(0, len(words), CHUNK_SIZE // 2):
+    # Keep overlap in the fallback path so extraction still sees context that
+    # straddles a hard word-count boundary when sentence splitting is unavailable.
+    for i in range(0, len(words), FALLBACK_CHUNK_STEP):
         chunk = " ".join(words[i : i + CHUNK_SIZE]).strip()
         if len(chunk.split()) >= MIN_CHUNK_WORDS:
             fallback_chunks.append(chunk)
