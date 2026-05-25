@@ -17,11 +17,18 @@ class FeatureConfig:
     term_match: bool = True
     consistency: bool = True
     answer_merging: bool = True
+    multi_hypothesis: bool = True
+    per_candidate_retrieval: bool = True
+    bidirectional_validation: bool = True
+    iterative_retrieval: bool = True
+    semantic_nlp: bool = False
     dataset_sources: tuple[str, ...] = ("wikipedia",)
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
     rerank_top_k: int = 10
     extraction_top_k: int = 5
+    max_retrieval_passes: int = 2
+    iterative_retrieval_threshold: float = 0.3
 
     @classmethod
     def baseline(cls) -> FeatureConfig:
@@ -40,6 +47,10 @@ class FeatureConfig:
             term_match=False,
             consistency=False,
             answer_merging=False,
+            multi_hypothesis=False,
+            per_candidate_retrieval=False,
+            bidirectional_validation=False,
+            iterative_retrieval=False,
         )
 
     def with_feature(self, name: str, enabled: bool) -> FeatureConfig:
@@ -57,4 +68,9 @@ OPTIONAL_FEATURES = (
     "term_match",
     "consistency",
     "answer_merging",
+    "multi_hypothesis",
+    "per_candidate_retrieval",
+    "bidirectional_validation",
+    "iterative_retrieval",
+    "semantic_nlp",
 )

@@ -69,7 +69,7 @@ LAT_QID_MAP: dict[str, list[str]] = {
 def _extract_lat(text: str, question_type: str) -> tuple[str | None, list[str]]:
     """Extract Lexical Answer Type from the question using simple heuristics.
 
-    Returns (lat_headword, list_of_expected_qids).  Returns (None, []) when no
+    Returns (lat_headword, list_of_expected_qids). Returns (None, []) when no
     LAT can be inferred.
     """
     lower = text.lower().strip()
@@ -87,13 +87,10 @@ def _extract_lat(text: str, question_type: str) -> tuple[str | None, list[str]]:
         return None, []
 
     if question_type in ("what", "unknown"):
-        # Try "what/who/which <noun phrase>" pattern.
         first_word = lower.split()[0] if lower.split() else ""
         rest = " ".join(lower.split()[1:]) if len(lower.split()) > 1 else ""
 
         if first_word in ("what", "which") and rest:
-            # Use a simple heuristic: the first noun chunk-like word is the LAT.
-            # Filter out common copula/auxiliary verbs.
             skip_words = {
                 "is",
                 "are",
@@ -126,8 +123,38 @@ def _extract_lat(text: str, question_type: str) -> tuple[str | None, list[str]]:
     return None, []
 
 
+def _extract_srl_frames(doc: Doc) -> list[dict[str, str]]:
+    """Build simple SRL-like frames from dependency parses."""
+    frames: list[dict[str, str]] = []
+    for token in doc:
+        if token.pos_ != "VERB":
+            continue
+
+        frame: dict[str, str] = {"predicate": token.lemma_ or token.text}
+        for child in token.children:
+            if child.dep_ == "nsubj":
+                frame["arg0"] = child.text
+            elif child.dep_ in {"dobj", "obj"}:
+                frame["arg1"] = child.text
+            elif child.dep_ == "prep":
+                pobj = next(
+                    (
+                        grandchild
+                        for grandchild in child.children
+                        if grandchild.dep_ == "pobj"
+                    ),
+                    None,
+                )
+                if pobj is not None:
+                    frame["argm"] = f"{child.text} {pobj.text}"
+        frames.append(frame)
+    return frames
+
+
 class NLPProcessor:
-    def __init__(self, model: str = "en_core_web_sm") -> None:
+    def __init__(
+        self, model: str = "en_core_web_sm", semantic_nlp: bool = False
+    ) -> None:
         if spacy is None:
             raise ImportError(
                 "spaCy is required for NLP processing. "
@@ -135,6 +162,14 @@ class NLPProcessor:
             ) from _SPACY_IMPORT_ERROR
         logger.debug("Loading spaCy model: %s", model)
         self.nlp = spacy.load(model)
+        self.semantic_nlp = semantic_nlp
+        self._has_coreferee = False
+        try:
+            self.nlp.add_pipe("coreferee")
+        except Exception as exc:  # pragma: no cover - depends on optional install
+            logger.debug("coreferee unavailable: %s", exc)
+        else:  # pragma: no cover - depends on optional install
+            self._has_coreferee = True
 
     def classify_question(self, text: str) -> str:
         first = text.strip().lower().split()[0] if text.strip() else ""
@@ -191,10 +226,64 @@ class NLPProcessor:
 
         return sub_questions if len(sub_questions) > 1 else [text]
 
-    def process(self, question: str) -> ParsedQuestion:
+    def _mention_text(self, doc: Doc, mention: object) -> str:
+        if isinstance(mention, str):
+            return mention
+
+        start = getattr(mention, "start", None)
+        end = getattr(mention, "end", None)
+        if isinstance(start, int) and isinstance(end, int) and start < end:
+            return str(doc[start:end])
+
+        token_indexes = getattr(mention, "token_indexes", None)
+        if isinstance(token_indexes, (list, tuple)) and token_indexes:
+            int_indexes = [index for index in token_indexes if isinstance(index, int)]
+            if int_indexes:
+                return str(doc[min(int_indexes) : max(int_indexes) + 1])
+
+        if isinstance(mention, (list, tuple)) and mention:
+            int_indexes = [index for index in mention if isinstance(index, int)]
+            if int_indexes:
+                return str(doc[min(int_indexes) : max(int_indexes) + 1])
+
+        token_index = getattr(mention, "token_index", None)
+        if isinstance(token_index, int):
+            return str(doc[token_index])
+
+        return str(mention)
+
+    def _resolve_coreference(self, doc: Doc) -> list[list[str]]:
+        if not self._has_coreferee:
+            return []
+        try:
+            chains = getattr(doc._, "coref_chains")
+        except Exception:  # pragma: no cover - optional runtime behavior
+            return []
+        if chains is None:
+            return []
+
+        clusters: list[list[str]] = []
+        for chain in chains:
+            raw_mentions = getattr(chain, "mentions", None)
+            mentions_iterable = (
+                raw_mentions if raw_mentions is not None else list(chain)
+            )
+            mentions = [
+                mention_text
+                for mention in mentions_iterable
+                if (mention_text := self._mention_text(doc, mention))
+            ]
+            if mentions:
+                clusters.append(mentions)
+        return clusters
+
+    def process(self, question: str, semantic_nlp: bool = False) -> ParsedQuestion:
         doc = self.nlp(question)
         question_type = self.classify_question(question)
         lat, lat_qids = _extract_lat(question, question_type)
+        semantic_enabled = semantic_nlp or self.semantic_nlp
+        srl_frames = _extract_srl_frames(doc) if semantic_enabled else []
+        coref_clusters = self._resolve_coreference(doc) if semantic_enabled else []
         return ParsedQuestion(
             raw=question,
             question_type=question_type,
@@ -205,4 +294,6 @@ class NLPProcessor:
             keywords=self.extract_keywords(doc),
             lat=lat,
             lat_qids=lat_qids,
+            srl_frames=srl_frames,
+            coref_clusters=coref_clusters,
         )

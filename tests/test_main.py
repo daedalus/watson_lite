@@ -61,6 +61,45 @@ class TestMain:
             assert called_config.graph_enrichment is False
             mock_wl.answer.assert_called_once_with("What is Python?", verbose=False)
 
+    def test_main_with_new_deepqa_flags(self) -> None:
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--no-multi-hypothesis",
+                    "--no-per-candidate-retrieval",
+                    "--no-bidirectional-validation",
+                    "--no-iterative-retrieval",
+                    "--semantic-nlp",
+                    "--max-retrieval-passes",
+                    "3",
+                    "--iterative-retrieval-threshold",
+                    "0.25",
+                    "What",
+                    "is",
+                    "Python?",
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert called_config.multi_hypothesis is False
+            assert called_config.per_candidate_retrieval is False
+            assert called_config.bidirectional_validation is False
+            assert called_config.iterative_retrieval is False
+            assert called_config.semantic_nlp is True
+            assert called_config.max_retrieval_passes == 3
+            assert called_config.iterative_retrieval_threshold == 0.25
+
     def test_main_with_datasets_flag(self) -> None:
         with (
             patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
@@ -235,6 +274,8 @@ class TestMain:
             assert called_config.vector_retrieval is False
             assert called_config.graph_enrichment is False
             assert called_config.cross_encoder_reranking is False
+            assert called_config.multi_hypothesis is False
+            assert called_config.iterative_retrieval is False
             assert "ANSWER" in capsys.readouterr().out
 
     def test_main_json_output(self, capsys: pytest.CaptureFixture[str]) -> None:

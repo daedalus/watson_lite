@@ -34,11 +34,12 @@ class TestRankedPassage:
 
 
 class TestAnswerCandidate:
-    def test_default_graph_corroborated(self) -> None:
+    def test_defaults(self) -> None:
         ac = AnswerCandidate(
             span="x", source="s", url="u", passage="p", extraction_score=0.5, rank=1
         )
         assert ac.graph_corroborated is False
+        assert ac.doc_frequency == 1
 
 
 class TestFinalAnswer:
@@ -47,6 +48,7 @@ class TestFinalAnswer:
         assert fa.supporting_passages == []
         assert fa.graph_facts == []
         assert fa.confidence_breakdown == {}
+        assert fa.evidence_chain == []
 
 
 class TestEntityFact:
@@ -69,3 +71,5 @@ class TestParsedQuestion:
         )
         assert pq.sub_questions == []
         assert pq.keywords == []
+        assert pq.srl_frames == []
+        assert pq.coref_clusters == []
