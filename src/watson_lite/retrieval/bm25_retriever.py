@@ -36,13 +36,18 @@ def _normalize_passage_text(text: str) -> str:
 
 
 def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
-    retry_after = getattr(response, "headers", {}).get("Retry-After")
+    retry_after: str | None = None
+    headers = getattr(response, "headers", None)
+    if headers is not None and hasattr(headers, "get"):
+        retry_after_value = headers.get("Retry-After")
+        if retry_after_value is not None:
+            retry_after = str(retry_after_value)
     if retry_after:
         try:
-            return max(float(retry_after), 0.0)
+            return float(max(float(retry_after), 0.0))
         except ValueError:
             logger.debug("Ignoring invalid Retry-After header: %s", retry_after)
-    return _REQUEST_BACKOFF_SECONDS * (2**attempt)
+    return float(_REQUEST_BACKOFF_SECONDS * (2**attempt))
 
 
 def _request_json(

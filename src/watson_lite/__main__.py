@@ -146,11 +146,11 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         else FeatureConfig.minimal()
     )
     overrides = {
-        dataset_sources=args.datasets,
-        wikipedia_top_k_per_query=args.wiki_top_k,
-        retrieval_top_k=args.retrieval_top_k,
-        rerank_top_k=args.rerank_top_k,
-        extraction_top_k=args.extract_top_k,
+        "dataset_sources": args.datasets,
+        "wikipedia_top_k_per_query": args.wiki_top_k,
+        "retrieval_top_k": args.retrieval_top_k,
+        "rerank_top_k": args.rerank_top_k,
+        "extraction_top_k": args.extract_top_k,
     }
     for name in (
         "vector_retrieval",

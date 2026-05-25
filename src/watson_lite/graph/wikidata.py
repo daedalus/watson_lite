@@ -10,7 +10,7 @@ try:
 except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
     JSON = None
     SPARQLWrapper = None
-    _SPARQL_IMPORT_ERROR = exc
+    _SPARQL_IMPORT_ERROR: ImportError | None = exc
 else:
     _SPARQL_IMPORT_ERROR = None
 
@@ -76,13 +76,18 @@ _PROPERTY_LABELS: dict[str, str] = {
 
 
 def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
-    retry_after = getattr(response, "headers", {}).get("Retry-After")
+    retry_after: str | None = None
+    headers = getattr(response, "headers", None)
+    if headers is not None and hasattr(headers, "get"):
+        retry_after_value = headers.get("Retry-After")
+        if retry_after_value is not None:
+            retry_after = str(retry_after_value)
     if retry_after:
         try:
-            return max(float(retry_after), 0.0)
+            return float(max(float(retry_after), 0.0))
         except ValueError:
             logger.debug("Ignoring invalid Retry-After header: %s", retry_after)
-    return _REQUEST_BACKOFF_SECONDS * (2**attempt)
+    return float(_REQUEST_BACKOFF_SECONDS * (2**attempt))
 
 
 def _request_json(
@@ -147,15 +152,18 @@ class WikidataGraph:
     def _ensure_sparql(self) -> Any:  # noqa: ANN401
         if self.sparql is not None:
             return self.sparql
-        if SPARQLWrapper is None or JSON is None:
+        sparql_cls = SPARQLWrapper
+        json_format = JSON
+        if sparql_cls is None or json_format is None:
             raise ImportError(
                 "SPARQL fallback requires SPARQLWrapper. "
                 "Install watson-lite with the 'graph' or 'full' extra."
             ) from _SPARQL_IMPORT_ERROR
-        self.sparql = SPARQLWrapper(WIKIDATA_ENDPOINT)
-        self.sparql.addCustomHttpHeader("User-Agent", USER_AGENT)
-        self.sparql.setReturnFormat(JSON)
-        return self.sparql
+        sparql = sparql_cls(WIKIDATA_ENDPOINT)
+        sparql.addCustomHttpHeader("User-Agent", USER_AGENT)
+        sparql.setReturnFormat(json_format)
+        self.sparql = sparql
+        return sparql
 
     def _run_query(self, query: str, retries: int = 3) -> list[dict[str, object]]:
         try:

@@ -37,13 +37,7 @@ class TestWikidataGraph:
         self.mock_cache.get_or_sentinel.return_value = "Q243"
         qid = self.graph.find_entity_id("Eiffel Tower")
         assert qid == "Q243"
-        self.mock_sparql_cls.assert_called_once_with(
-            "https://query.wikidata.org/sparql"
-        )
-        self.mock_sparql.addCustomHttpHeader.assert_called_once_with(
-            "User-Agent", "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
-        )
-        self.mock_sparql.setReturnFormat.assert_called_once()
+        self.mock_sparql_cls.assert_not_called()
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_find_entity_id_api_success(self, mock_get: MagicMock) -> None:

@@ -63,7 +63,7 @@ def patched_pipeline():
         patch("watson_lite.retrieval.vector_retriever.SentenceTransformer") as mock_st,
         patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,
         patch("watson_lite.ranking.ranker.CrossEncoder") as mock_ce,
-        patch("watson_lite.core.extractor.pipeline") as mock_hf_pipe,
+        patch("watson_lite.core.extractor.hf_pipeline") as mock_hf_pipe,
         patch("watson_lite.graph.wikidata.SPARQLWrapper"),
         patch("watson_lite.graph.wikidata.requests.get") as mock_wd_get,
         patch("watson_lite.graph.wikidata.get_cache") as mock_wd_cache,

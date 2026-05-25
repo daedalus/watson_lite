@@ -1,11 +1,13 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from watson_lite.core.models import ParsedQuestion
+
 try:
     import spacy
 except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
     spacy = None
-    _SPACY_IMPORT_ERROR = exc
+    _SPACY_IMPORT_ERROR: ImportError | None = exc
 else:
     _SPACY_IMPORT_ERROR = None
 
@@ -13,8 +15,6 @@ if TYPE_CHECKING:
     from spacy.tokens import Doc
 else:  # pragma: no cover - typing fallback when spaCy is not installed
     Doc = Any
-
-from watson_lite.core.models import ParsedQuestion
 
 logger = logging.getLogger(__name__)
 

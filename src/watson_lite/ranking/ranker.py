@@ -5,7 +5,7 @@ try:
     from sentence_transformers import CrossEncoder
 except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
     CrossEncoder = None
-    _CROSS_ENCODER_IMPORT_ERROR = exc
+    _CROSS_ENCODER_IMPORT_ERROR: ImportError | None = exc
 else:
     _CROSS_ENCODER_IMPORT_ERROR = None
 

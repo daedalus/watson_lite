@@ -873,7 +873,7 @@ class TestExtractorCoverage:
     def test_reader_exception_skips_passage(self) -> None:
         from watson_lite.core.extractor import ExtractiveReader
 
-        with patch("watson_lite.core.extractor.pipeline") as mock_pipeline_cls:
+        with patch("watson_lite.core.extractor.hf_pipeline") as mock_pipeline_cls:
             mock_qa = MagicMock()
             mock_qa.side_effect = RuntimeError("QA model failed")
             mock_pipeline_cls.return_value = mock_qa

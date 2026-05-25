@@ -5,18 +5,19 @@ from typing import Any
 import numpy as np
 
 try:
-    import faiss
+    import faiss as _faiss
 except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
-    faiss = None
-    _FAISS_IMPORT_ERROR = exc
+    faiss: Any = None
+    _FAISS_IMPORT_ERROR: ImportError | None = exc
 else:
+    faiss = _faiss
     _FAISS_IMPORT_ERROR = None
 
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
     SentenceTransformer = None
-    _SENTENCE_TRANSFORMERS_IMPORT_ERROR = exc
+    _SENTENCE_TRANSFORMERS_IMPORT_ERROR: ImportError | None = exc
 else:
     _SENTENCE_TRANSFORMERS_IMPORT_ERROR = None
 
