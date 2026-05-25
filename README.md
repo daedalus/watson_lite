@@ -191,10 +191,71 @@ Checked-in benchmark smoke dataset: `benchmarks/smoke.json`
 
 ## Architecture
 
-```
-User Question → NLP (spaCy) → Decomposition → Entity Extraction
-  → Parallel Retrieval (BM25 + FAISS) → Graph (Wikidata)
-  → RRF Fusion → Cross-Encoder Rerank → Span Extraction → Confidence Score
+```text
+                          +------------------+
+                          |  User question   |
+                          +------------------+
+                                    |
+                                    v
+                    +-----------------------------+        +-----------------------------+
+                    | NLPProcessor                |------->| WikidataGraph               |
+                    | - classify question         | entity | - enrich extracted entities |
+                    | - extract entities/keywords | names  +-----------------------------+
+                    +-----------------------------+                    | graph_results
+                          |          |                                 |
+                    queries|  sub-    |                                 |
+                           | questions|                                 |
+                           v          v                                 |
+                    +--------------------------+                        |
+                    | Query expansion +        |                        |
+                    | sub-questions            |                        |
+                    +--------------------------+                        |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | DatasetQueryEngine          |                     |
+                    | - Wikipedia REST API        |                     |
+                    | - Wikibooks REST API        |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | Parallel retrieval          |                     |
+                    | - BM25Retriever             |                     |
+                    | - VectorRetriever (FAISS)   |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | Ranker                      |                     |
+                    | - RRF fusion                |                     |
+                    | - cross-encoder rerank      |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | ExtractiveReader            |                     |
+                    | - answer span extraction    |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    +-------------------+---------------+
+                                                        |
+                                                        v
+                                        +-----------------------------+
+                                        | ConfidenceScorer            |
+                                        | - extraction score          |
+                                        | - span agreement            |
+                                        | - graph corroboration       |
+                                        | - rank / type-coercion      |
+                                        +-----------------------------+
+                                                        |
+                                                        v
+                                        +-----------------------------+
+                                        | FinalAnswer + diagnostics   |
+                                        +-----------------------------+
+
+SQLite cache (cross-cutting): backs DatasetQueryEngine fetches,
+Wikidata lookups, and type-coercion calls with TTL-expiry entries.
 ```
 
 ## Models Used (all pretrained, inference only)
