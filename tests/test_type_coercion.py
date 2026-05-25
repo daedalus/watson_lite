@@ -366,7 +366,7 @@ class TestFetchTypeHierarchy:
             tc_mod._type_cache.update(original)
 
 
-
+class TestScoreTypeCoercion:
     def test_empty_candidates_returns_zero(self) -> None:
         assert score_type_coercion([], ["Q5"]) == 0.0
 
