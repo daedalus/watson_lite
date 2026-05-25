@@ -149,7 +149,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=("wikipedia",),
         help=(
             "Comma-separated datasets to query "
-            "(e.g. wikipedia,wikibooks,huggingface)"
+            "(e.g. wikipedia,wikibooks,wikiquote,pubmed,arxiv)"
         ),
     )
     parser.add_argument(
@@ -168,10 +168,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--huggingface-dataset",
         type=str,
         default=None,
-        help=(
-            "Hugging Face dataset id "
-            "(used when datasets include 'huggingface')"
-        ),
+        help=("Hugging Face dataset id (used when datasets include 'huggingface')"),
     )
     parser.add_argument(
         "--huggingface-config",
@@ -186,19 +183,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--huggingface-split",
         type=str,
         default=None,
-        help=(
-            "Hugging Face dataset split "
-            "(used when datasets include 'huggingface')"
-        ),
+        help=("Hugging Face dataset split (used when datasets include 'huggingface')"),
     )
     parser.add_argument(
         "--huggingface-token",
         type=str,
         default=None,
-        help=(
-            "Hugging Face auth token "
-            "(optional, used for private/gated datasets)"
-        ),
+        help=("Hugging Face auth token (optional, used for private/gated datasets)"),
     )
     parser.add_argument("--retrieval-top-k", type=int, default=20)
     parser.add_argument("--rerank-top-k", type=int, default=10)

@@ -196,6 +196,41 @@ class TestMain:
             assert called_config.huggingface_split == "train"
             assert called_config.huggingface_token == "hf_example"
 
+    def test_main_with_new_public_datasets_flag(self) -> None:
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--datasets",
+                    "wikiquote,wikisource,wikinews,pubmed,arxiv,openlibrary,stackexchange,dbpedia,oeis",
+                    "What",
+                    "is",
+                    "Python?",
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+            result = main()
+
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert called_config.dataset_sources == (
+                "wikiquote",
+                "wikisource",
+                "wikinews",
+                "pubmed",
+                "arxiv",
+                "openlibrary",
+                "stackexchange",
+                "dbpedia",
+                "oeis",
+            )
+
     def test_main_benchmark_mode(self) -> None:
         with (
             patch("watson_lite.__main__.run_benchmark_profiles") as mock_run,

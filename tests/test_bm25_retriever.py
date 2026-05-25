@@ -6,8 +6,17 @@ from watson_lite.core.cache import SENTINEL
 from watson_lite.core.models import Passage
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
+    fetch_arxiv_passages,
+    fetch_dbpedia_passages,
     fetch_elasticsearch_passages,
     fetch_huggingface_passages,
+    fetch_oeis_passages,
+    fetch_openlibrary_passages,
+    fetch_pubmed_passages,
+    fetch_stackexchange_passages,
+    fetch_wikinews_passages,
+    fetch_wikiquote_passages,
+    fetch_wikisource_passages,
     fetch_wikipedia_passages,
 )
 
@@ -384,3 +393,174 @@ class TestFetchHuggingFacePassages:
         assert len(result) == 1
         assert result[0].source == "Sample row"
         assert result[0].text == "Python is a programming language used for many tasks."
+
+
+class TestAdditionalPublicSources:
+    def setup_method(self) -> None:
+        self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
+        self.mock_get_cache = self.cache_patcher.start()
+        self.mock_cache = MagicMock()
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
+        self.mock_get_cache.return_value = self.mock_cache
+
+    def teardown_method(self) -> None:
+        self.cache_patcher.stop()
+
+    @patch("watson_lite.retrieval.bm25_retriever.fetch_mediawiki_passages")
+    def test_wikiquote_delegates_to_mediawiki(self, mock_fetch: MagicMock) -> None:
+        mock_fetch.return_value = []
+        fetch_wikiquote_passages("python", top_k=3)
+        mock_fetch.assert_called_once()
+        kwargs = mock_fetch.call_args.kwargs
+        assert kwargs["api_url"] == "https://en.wikiquote.org/w/api.php"
+        assert kwargs["cache_namespace"] == "wikiquote"
+
+    @patch("watson_lite.retrieval.bm25_retriever.fetch_mediawiki_passages")
+    def test_wikisource_delegates_to_mediawiki(self, mock_fetch: MagicMock) -> None:
+        mock_fetch.return_value = []
+        fetch_wikisource_passages("python", top_k=3)
+        kwargs = mock_fetch.call_args.kwargs
+        assert kwargs["api_url"] == "https://en.wikisource.org/w/api.php"
+        assert kwargs["cache_namespace"] == "wikisource"
+
+    @patch("watson_lite.retrieval.bm25_retriever.fetch_mediawiki_passages")
+    def test_wikinews_delegates_to_mediawiki(self, mock_fetch: MagicMock) -> None:
+        mock_fetch.return_value = []
+        fetch_wikinews_passages("python", top_k=3)
+        kwargs = mock_fetch.call_args.kwargs
+        assert kwargs["api_url"] == "https://en.wikinews.org/w/api.php"
+        assert kwargs["cache_namespace"] == "wikinews"
+
+    @patch("watson_lite.retrieval.bm25_retriever._request_json")
+    def test_pubmed_success(self, mock_request_json: MagicMock) -> None:
+        mock_request_json.side_effect = [
+            {"esearchresult": {"idlist": ["12345"]}},
+            {
+                "result": {
+                    "uids": ["12345"],
+                    "12345": {
+                        "title": "Python in medicine",
+                        "fulljournalname": "Medical Journal",
+                        "pubdate": "2025",
+                        "authors": [{"name": "Jane Doe"}],
+                    },
+                }
+            },
+        ]
+
+        result = fetch_pubmed_passages("python")
+
+        assert len(result) == 1
+        assert result[0].source == "Python in medicine"
+        assert result[0].url == "https://pubmed.ncbi.nlm.nih.gov/12345/"
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_arxiv_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.text = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/1234.5678</id>
+    <title>Python Research</title>
+    <summary>Python is used for scientific computing and reproducible research workflows.</summary>
+  </entry>
+</feed>
+"""
+        mock_get.return_value = response
+
+        result = fetch_arxiv_passages("python")
+
+        assert len(result) == 1
+        assert result[0].source == "Python Research"
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_openlibrary_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "docs": [
+                {
+                    "title": "Learning Python",
+                    "key": "/works/OL1W",
+                    "author_name": ["Mark Lutz"],
+                    "first_sentence": ["A guide to Python."],
+                    "subject": ["programming"],
+                    "first_publish_year": 1999,
+                }
+            ]
+        }
+        mock_get.return_value = response
+
+        result = fetch_openlibrary_passages("python")
+
+        assert len(result) == 1
+        assert result[0].source == "Learning Python"
+        assert result[0].url == "https://openlibrary.org/works/OL1W"
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_stackexchange_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "items": [
+                {
+                    "title": "How to use Python lists?",
+                    "body": "<p>Use append and extend methods.</p>",
+                    "tags": ["python", "list"],
+                    "link": "https://stackoverflow.com/questions/1",
+                }
+            ]
+        }
+        mock_get.return_value = response
+
+        result = fetch_stackexchange_passages("python")
+
+        assert len(result) == 1
+        assert result[0].source == "StackExchange:stackoverflow"
+        assert result[0].url == "https://stackoverflow.com/questions/1"
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_dbpedia_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "docs": [
+                {
+                    "label": ["Python_(programming_language)"],
+                    "comment": ["Python is an interpreted language."],
+                    "resource": [
+                        "http://dbpedia.org/resource/Python_(programming_language)"
+                    ],
+                    "typeName": ["ProgrammingLanguage"],
+                }
+            ]
+        }
+        mock_get.return_value = response
+
+        result = fetch_dbpedia_passages("python")
+
+        assert len(result) == 1
+        assert "Python_(programming_language)" in result[0].source
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_oeis_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "results": [
+                {
+                    "number": 45,
+                    "name": "Fibonacci numbers",
+                    "data": "1,1,2,3,5,8",
+                    "comment": "Classic sequence",
+                }
+            ]
+        }
+        mock_get.return_value = response
+
+        result = fetch_oeis_passages("fibonacci")
+
+        assert len(result) == 1
+        assert result[0].source == "A000045"
+        assert result[0].url == "https://oeis.org/A000045"
