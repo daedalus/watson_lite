@@ -5,22 +5,33 @@ import pytest
 
 from watson_lite.__main__ import main
 from watson_lite.core.config import FeatureConfig
+from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 
 
 class TestMain:
+    @staticmethod
+    def _fake_answer() -> FinalAnswer:
+        return FinalAnswer(
+            answer="Python",
+            confidence=0.9,
+            source="Wiki",
+            url="https://example.org",
+        )
+
     def test_main_with_argv(self) -> None:
         with (
             patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
             patch.object(sys, "argv", ["prog", "What", "is", "Python?"]),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
 
             result = main()
 
             assert result == 0
             mock_wl_cls.assert_called_once()
-            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=False)
 
     def test_main_with_feature_flags(self) -> None:
         with (
@@ -39,6 +50,7 @@ class TestMain:
             ),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
             result = main()
 
@@ -47,7 +59,7 @@ class TestMain:
             assert isinstance(called_config, FeatureConfig)
             assert called_config.vector_retrieval is False
             assert called_config.graph_enrichment is False
-            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=False)
 
     def test_main_with_datasets_flag(self) -> None:
         with (
@@ -66,6 +78,7 @@ class TestMain:
             ),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
             result = main()
 
@@ -120,6 +133,7 @@ class TestMain:
             patch("builtins.input", side_effect=["quit"]),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
 
             result = main()
@@ -133,12 +147,13 @@ class TestMain:
             patch("builtins.input", side_effect=["What is Python?", "quit"]),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
 
             result = main()
 
             assert result == 0
-            mock_wl.answer.assert_called_once_with("What is Python?", verbose=True)
+            mock_wl.answer.assert_called_once_with("What is Python?", verbose=False)
 
     def test_main_interactive_empty_input(self) -> None:
         with (
@@ -147,6 +162,7 @@ class TestMain:
             patch("builtins.input", side_effect=["", "quit"]),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
 
             result = main()
@@ -162,6 +178,7 @@ class TestMain:
                 patch("builtins.input", side_effect=[cmd]),
             ):
                 mock_wl = MagicMock()
+                mock_wl.answer.return_value = self._fake_answer()
                 mock_wl_cls.return_value = mock_wl
 
                 result = main()
@@ -174,6 +191,7 @@ class TestMain:
             patch("builtins.input", side_effect=KeyboardInterrupt()),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
 
             result = main()
@@ -186,7 +204,82 @@ class TestMain:
             patch("builtins.input", side_effect=EOFError()),
         ):
             mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
             mock_wl_cls.return_value = mock_wl
 
             result = main()
             assert result == 0
+
+    def test_main_with_minimal_profile(self, capsys: pytest.CaptureFixture[str]) -> None:
+        answer = FinalAnswer(answer="Paris", confidence=0.9, source="Wiki", url="https://e")
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                ["prog", "--profile", "minimal", "What", "is", "Python?"],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = answer
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert called_config.vector_retrieval is False
+            assert called_config.graph_enrichment is False
+            assert called_config.cross_encoder_reranking is False
+            assert "ANSWER" in capsys.readouterr().out
+
+    def test_main_json_output(self, capsys: pytest.CaptureFixture[str]) -> None:
+        answer = FinalAnswer(
+            answer="Paris",
+            confidence=0.9,
+            source="Wiki",
+            url="https://e",
+            diagnostics=AnswerDiagnostics(total_latency_s=0.1),
+        )
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                ["prog", "--output", "json", "What", "is", "Python?"],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = answer
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+            assert result == 0
+            output = capsys.readouterr().out
+            assert '"answer": "Paris"' in output
+            assert '"diagnostics"' in output
+
+    def test_main_clear_cache(self) -> None:
+        with (
+            patch("watson_lite.__main__.get_cache") as mock_get_cache,
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                ["prog", "--clear-cache", "What", "is", "Python?"],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = FinalAnswer(
+                answer="Python",
+                confidence=0.9,
+                source="Wiki",
+                url="https://e",
+            )
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+            assert result == 0
+            mock_get_cache.return_value.clear.assert_called_once()

@@ -13,6 +13,8 @@ class TestWikidataGraph:
         self.mock_sparql_cls = self.sparql_patcher.start()
         self.mock_sparql = MagicMock()
         self.mock_sparql_cls.return_value = self.mock_sparql
+        self.sleep_patcher = patch("watson_lite.graph.wikidata.time.sleep")
+        self.sleep_patcher.start()
 
         self.cache_patcher = patch("watson_lite.graph.wikidata.get_cache")
         self.mock_get_cache = self.cache_patcher.start()
@@ -26,8 +28,15 @@ class TestWikidataGraph:
     def teardown_method(self) -> None:
         self.sparql_patcher.stop()
         self.cache_patcher.stop()
+        self.sleep_patcher.stop()
 
     def test_constructor_configures_sparql(self) -> None:
+        self.mock_sparql_cls.assert_not_called()
+
+    def test_find_entity_id_cache_hit(self) -> None:
+        self.mock_cache.get_or_sentinel.return_value = "Q243"
+        qid = self.graph.find_entity_id("Eiffel Tower")
+        assert qid == "Q243"
         self.mock_sparql_cls.assert_called_once_with(
             "https://query.wikidata.org/sparql"
         )
@@ -35,11 +44,6 @@ class TestWikidataGraph:
             "User-Agent", "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
         )
         self.mock_sparql.setReturnFormat.assert_called_once()
-
-    def test_find_entity_id_cache_hit(self) -> None:
-        self.mock_cache.get_or_sentinel.return_value = "Q243"
-        qid = self.graph.find_entity_id("Eiffel Tower")
-        assert qid == "Q243"
 
     @patch("watson_lite.graph.wikidata.requests.get")
     def test_find_entity_id_api_success(self, mock_get: MagicMock) -> None:

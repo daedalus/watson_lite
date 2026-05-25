@@ -4,7 +4,13 @@ import logging
 import re
 from typing import TYPE_CHECKING, Literal, overload
 
-from transformers import pipeline
+try:
+    from transformers import pipeline
+except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
+    pipeline = None
+    _TRANSFORMERS_IMPORT_ERROR = exc
+else:
+    _TRANSFORMERS_IMPORT_ERROR = None
 
 from watson_lite.core.models import (
     AnswerCandidate,
@@ -47,6 +53,11 @@ def _question_type_bonus(span: str, question_type: str) -> float:
 
 class ExtractiveReader:
     def __init__(self, model_name: str = EXTRACTIVE_MODEL) -> None:
+        if pipeline is None:
+            raise ImportError(
+                "Extractive reading requires transformers (and torch). "
+                "Install watson-lite with the 'reader' or 'full' extra."
+            ) from _TRANSFORMERS_IMPORT_ERROR
         logger.debug("Loading extractive QA model: %s", model_name)
         self.qa: Pipeline = pipeline(
             "question-answering",

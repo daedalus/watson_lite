@@ -2,9 +2,23 @@ import copy
 import logging
 from typing import Any
 
-import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+try:
+    import faiss
+except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
+    faiss = None
+    _FAISS_IMPORT_ERROR = exc
+else:
+    _FAISS_IMPORT_ERROR = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
+    SentenceTransformer = None
+    _SENTENCE_TRANSFORMERS_IMPORT_ERROR = exc
+else:
+    _SENTENCE_TRANSFORMERS_IMPORT_ERROR = None
 
 from watson_lite.core.models import Passage
 
@@ -15,6 +29,17 @@ EMBED_MODEL = "all-MiniLM-L6-v2"
 
 class VectorRetriever:
     def __init__(self, model_name: str = EMBED_MODEL) -> None:
+        if SentenceTransformer is None or faiss is None:
+            missing = []
+            if SentenceTransformer is None:
+                missing.append("sentence-transformers")
+            if faiss is None:
+                missing.append("faiss-cpu")
+            raise ImportError(
+                "Vector retrieval dependencies are missing: "
+                f"{', '.join(missing)}. Install watson-lite with the "
+                "'vector' or 'full' extra."
+            ) from (_SENTENCE_TRANSFORMERS_IMPORT_ERROR or _FAISS_IMPORT_ERROR)
         logger.debug("Loading embedding model: %s", model_name)
         self.model = SentenceTransformer(model_name)
         self.index: Any = None  # faiss.IndexFlatIP once built

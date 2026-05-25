@@ -1,7 +1,13 @@
 import hashlib
 import logging
 
-from sentence_transformers import CrossEncoder
+try:
+    from sentence_transformers import CrossEncoder
+except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
+    CrossEncoder = None
+    _CROSS_ENCODER_IMPORT_ERROR = exc
+else:
+    _CROSS_ENCODER_IMPORT_ERROR = None
 
 from watson_lite.core.models import Passage, RankedPassage
 
@@ -37,6 +43,11 @@ class RRFFusion:
 
 class CrossEncoderReranker:
     def __init__(self, model_name: str = CROSS_ENCODER_MODEL) -> None:
+        if CrossEncoder is None:
+            raise ImportError(
+                "Cross-encoder reranking requires sentence-transformers. "
+                "Install watson-lite with the 'rerank' or 'full' extra."
+            ) from _CROSS_ENCODER_IMPORT_ERROR
         logger.debug("Loading cross-encoder: %s", model_name)
         self.model = CrossEncoder(model_name, max_length=512)
 
@@ -69,9 +80,11 @@ class CrossEncoderReranker:
 
 
 class Ranker:
-    def __init__(self) -> None:
+    def __init__(self, *, enable_cross_encoder: bool = True) -> None:
         self.rrf = RRFFusion()
-        self.cross_encoder = CrossEncoderReranker()
+        self.cross_encoder = (
+            CrossEncoderReranker() if enable_cross_encoder else None
+        )
 
     def rank(  # pylint: disable=too-many-arguments
         self,
@@ -105,6 +118,9 @@ class Ranker:
                 )
             logger.debug("Final top-%d passages ranked (RRF only)", len(ranked))
             return ranked
+
+        if self.cross_encoder is None:
+            self.cross_encoder = CrossEncoderReranker()
 
         candidates = fused[:50]
         ranked = self.cross_encoder.rerank(query, candidates, top_k=top_k)

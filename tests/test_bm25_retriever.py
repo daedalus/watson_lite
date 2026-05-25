@@ -18,9 +18,12 @@ class TestFetchWikipediaPassages:
         # Default: every key is a cache miss.
         self.mock_cache.get_or_sentinel.return_value = SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
+        self.sleep_patcher = patch("watson_lite.retrieval.bm25_retriever.time.sleep")
+        self.sleep_patcher.start()
 
     def teardown_method(self) -> None:
         self.cache_patcher.stop()
+        self.sleep_patcher.stop()
 
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_cache_hit(self, mock_get: MagicMock) -> None:
@@ -46,7 +49,7 @@ class TestFetchWikipediaPassages:
         result = fetch_wikipedia_passages("test")
         assert result == []
         self.mock_cache.set.assert_called_once_with(
-            "wiki:passages:test",
+            "wiki:passages:test:top_k=5",
             [],
             ttl_seconds=300,
         )
