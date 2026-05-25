@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from watson_lite.core.cache import SENTINEL, Cache
 from watson_lite.core.config import OPTIONAL_FEATURES, FeatureConfig
+from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 from watson_lite.evaluation.kpis import (
     BenchmarkLabel,
     KPIReport,
@@ -19,6 +22,33 @@ from watson_lite.evaluation.kpis import (
     token_f1,
 )
 from watson_lite.pipeline import WatsonLite
+
+_CACHE_DB = Path(__file__).resolve().parent.parent.parent.parent / "benchmarks" / ".answer_cache.sqlite3"
+_ANSWER_CACHE: Cache | None = None
+
+
+def _get_answer_cache() -> Cache:
+    global _ANSWER_CACHE
+    if _ANSWER_CACHE is None:
+        _ANSWER_CACHE = Cache(db_path=str(_CACHE_DB))
+    return _ANSWER_CACHE
+
+
+def _cache_key(profile: str, question: str) -> str:
+    h = hashlib.sha256(question.encode("utf-8")).hexdigest()
+    return f"benchmark:answer:{profile}:{h}"
+
+
+def _serialize_answer(answer: FinalAnswer) -> str:
+    return json.dumps(asdict(answer), default=str)
+
+
+def _deserialize_answer(raw: str) -> FinalAnswer:
+    d = json.loads(raw)
+    diag = d.pop("diagnostics", None)
+    if diag is not None:
+        d["diagnostics"] = AnswerDiagnostics(**diag)
+    return FinalAnswer(**d)
 
 
 def _normalizer_for_dataset(dataset_path: str) -> NormalizeFn:
@@ -117,33 +147,41 @@ def _run_profile(
     normalize_fn: NormalizeFn = normalize_squad,
 ) -> BenchmarkProfileResult:
     watson = WatsonLite(config=config)
-    answers = []
-    labels = []
+    cache = _get_answer_cache()
+    answers: list[FinalAnswer] = []
+    labels: list[BenchmarkLabel] = []
     total = len(samples)
     for i, sample in enumerate(samples):
-        ans = watson.answer(sample.question, verbose=False)
+        key = _cache_key(profile, sample.question)
+        cached = cache.get_or_sentinel(key)
+        if cached is not SENTINEL:
+            ans = _deserialize_answer(cached)
+            print(f"[{i + 1}/{total}] [benchmark cache HIT]  {sample.question[:60]}…")
+        else:
+            ans = watson.answer(sample.question, verbose=False)
+            cache.set(key, _serialize_answer(ans))
+            print(f"[{i + 1}/{total}] [benchmark cache MISS] {sample.question[:60]}…")
+
         answers.append(ans)
-        label = BenchmarkLabel(
-            answers=sample.answers,
-            evidence_passages=sample.evidence_passages,
+        labels.append(
+            BenchmarkLabel(
+                answers=sample.answers,
+                evidence_passages=sample.evidence_passages,
+            )
         )
-        labels.append(label)
+
         if verbose:
-            em = max(
+            max(
                 exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers
             )
-            f1 = max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
+            max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
             q = sample.question[:80] + ("…" if len(sample.question) > 80 else "")
             a = ans.answer[:60] + ("…" if len(ans.answer) > 60 else "")
             expected = " | ".join(sample.answers[:3])
             if len(sample.answers) > 3:
                 expected += f" ( +{len(sample.answers) - 3} more)"
             print(
-                f"[{i + 1}/{total}] "
-                f"EM={em:.2f} F1={f1:.2f} conf={ans.confidence:.2f}\n"
-                f"  Q: {q}\n"
-                f"  A: {a}\n"
-                f"  ≈: {expected}\n"
+                f"  Q: {q}\n  A: {a}\n  ≈: {expected}\n"
             )
 
     report = evaluate_kpis(
