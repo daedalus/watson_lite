@@ -46,6 +46,9 @@ watson-lite --no-vector-retrieval --no-graph-enrichment "Who designed the Eiffel
 # Query across multiple online datasets
 watson-lite --datasets wikipedia,wikibooks "What is Python?"
 
+# Query additional public sources
+watson-lite --datasets wikiquote,wikisource,wikinews,pubmed,arxiv "What is Python?"
+
 # Query Elasticsearch
 watson-lite \
   --datasets elasticsearch \
@@ -185,6 +188,15 @@ Optional toggles (default enabled):
 Dataset providers:
 - `wikipedia`
 - `wikibooks`
+- `wikiquote`
+- `wikisource`
+- `wikinews`
+- `pubmed`
+- `arxiv`
+- `openlibrary`
+- `stackexchange`
+- `dbpedia`
+- `oeis`
 - `elasticsearch` (configure with `--elasticsearch-url` and `--elasticsearch-index`, or `WATSON_LITE_ELASTICSEARCH_URL` and `WATSON_LITE_ELASTICSEARCH_INDEX`)
 - `huggingface`
   - required: `--huggingface-dataset`, `--huggingface-split`
