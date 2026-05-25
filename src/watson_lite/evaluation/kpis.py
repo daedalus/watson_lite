@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 import statistics
 import string
+import unicodedata
+from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -13,6 +16,8 @@ if TYPE_CHECKING:
 
 _P50_INDEX = 49
 _P95_INDEX = 94
+
+NormalizeFn = Callable[[str], str]
 
 
 @dataclass
@@ -43,31 +48,59 @@ class KPIReport:
     average_passages_extracted: float
 
 
-def _normalize_text(text: str) -> str:
+def normalize_squad(text: str) -> str:
     lowered = text.lower()
     no_punc = lowered.translate(str.maketrans("", "", string.punctuation))
     no_articles = re.sub(r"\b(a|an|the)\b", " ", no_punc)
     return " ".join(no_articles.split())
 
 
-def _token_f1(prediction: str, reference: str) -> float:
-    pred_tokens = _normalize_text(prediction).split()
-    ref_tokens = _normalize_text(reference).split()
+def normalize_nq_open(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", text)
+    lowered = decomposed.lower()
+    no_punc = lowered.translate(str.maketrans("", "", string.punctuation))
+    no_articles = re.sub(r"\b(a|an|the)\b", " ", no_punc)
+    return " ".join(no_articles.split())
+
+
+def normalize_triviaqa(text: str) -> str:
+    lowered = text.lower()
+    exclude = set(string.punctuation + "\u2018\u2019\u00b4\u0060")
+    no_punc = "".join(ch if ch not in exclude else " " for ch in lowered)
+    no_articles = re.sub(r"\b(a|an|the)\b", " ", no_punc)
+    no_underscore = no_articles.replace("_", " ")
+    return " ".join(no_underscore.split()).strip()
+
+
+_normalize_text = normalize_squad
+
+
+def token_f1(
+    prediction: str,
+    reference: str,
+    normalize_fn: NormalizeFn = normalize_squad,
+) -> float:
+    pred_tokens = normalize_fn(prediction).split()
+    ref_tokens = normalize_fn(reference).split()
     if not pred_tokens and not ref_tokens:
         return 1.0
     if not pred_tokens or not ref_tokens:
         return 0.0
-    common = set(pred_tokens) & set(ref_tokens)
-    if not common:
+    common = Counter(pred_tokens) & Counter(ref_tokens)
+    overlap = sum(common.values())
+    if overlap == 0:
         return 0.0
-    overlap = sum(min(pred_tokens.count(t), ref_tokens.count(t)) for t in common)
     precision = overlap / len(pred_tokens)
     recall = overlap / len(ref_tokens)
     return 2 * precision * recall / (precision + recall)
 
 
-def _exact_match(prediction: str, reference: str) -> float:
-    return float(_normalize_text(prediction) == _normalize_text(reference))
+def exact_match(
+    prediction: str,
+    reference: str,
+    normalize_fn: NormalizeFn = normalize_squad,
+) -> float:
+    return float(normalize_fn(prediction) == normalize_fn(reference))
 
 
 def _is_success(answer: FinalAnswer) -> bool:
@@ -150,6 +183,7 @@ def _evaluate_labeled(
     labels: list[BenchmarkLabel],
     recall_k: int,
     calibration_bins: int,
+    normalize_fn: NormalizeFn = normalize_squad,
 ) -> tuple[float, float, float, float, float]:
     em_values: list[float] = []
     f1_values: list[float] = []
@@ -159,8 +193,8 @@ def _evaluate_labeled(
     recall_total = 0
 
     for answer, label in zip(answers, labels):
-        em = max(_exact_match(answer.answer, ref) for ref in label.answers)
-        f1 = max(_token_f1(answer.answer, ref) for ref in label.answers)
+        em = max(exact_match(answer.answer, ref, normalize_fn) for ref in label.answers)
+        f1 = max(token_f1(answer.answer, ref, normalize_fn) for ref in label.answers)
         em_values.append(em)
         f1_values.append(f1)
         correctness.append(em > 0)
@@ -191,6 +225,7 @@ def evaluate_kpis(
     *,
     recall_k: int = 10,
     calibration_bins: int = 10,
+    normalize_fn: NormalizeFn = normalize_squad,
 ) -> KPIReport:
     if not answers:
         raise ValueError("answers must not be empty")
@@ -249,7 +284,11 @@ def evaluate_kpis(
 
     if labels is not None:
         accuracy_at_1, em_score, f1_score, ece, recall = _evaluate_labeled(
-            answers, labels, recall_k=recall_k, calibration_bins=calibration_bins
+            answers,
+            labels,
+            recall_k=recall_k,
+            calibration_bins=calibration_bins,
+            normalize_fn=normalize_fn,
         )
 
     return KPIReport(

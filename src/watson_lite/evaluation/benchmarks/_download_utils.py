@@ -32,6 +32,15 @@ def progress_bar(description: str, current: int, total: int) -> None:
         sys.stdout.write("\n")
 
 
+def _remote_size(url: str, timeout: int = 30) -> int | None:
+    try:
+        resp = requests.head(url, timeout=timeout, allow_redirects=True)
+        raw = resp.headers.get("Content-Length")
+        return int(raw) if raw else None
+    except (requests.RequestException, ValueError, TypeError):
+        return None
+
+
 def download_with_resume(
     url: str,
     dest: Path,
@@ -40,6 +49,15 @@ def download_with_resume(
     timeout: int = 600,
 ) -> Path:
     label = label or dest.name
+
+    if dest.exists() and dest.stat().st_size > 0:
+        remote_len = _remote_size(url)
+        if remote_len is not None and dest.stat().st_size >= remote_len:
+            print(
+                f"{label}: already downloaded ({dest.stat().st_size} bytes), skipping"
+            )
+            return dest
+
     part_path = dest.with_suffix(dest.suffix + ".part")
     headers: dict[str, str] = {}
     mode = "wb"
