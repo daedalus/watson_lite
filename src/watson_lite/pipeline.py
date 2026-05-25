@@ -23,6 +23,7 @@ from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
     fetch_elasticsearch_passages,
+    fetch_huggingface_passages,
     fetch_wikibooks_passages,
     fetch_wikipedia_page_by_title,
     fetch_wikipedia_passages,
@@ -69,6 +70,17 @@ class WatsonLite:
                         top_k=top_k,
                         base_url=self.config.elasticsearch_url,
                         index=self.config.elasticsearch_index,
+                    ),
+                ),
+                DatasetProvider(
+                    "huggingface",
+                    lambda query, *, top_k: fetch_huggingface_passages(
+                        query,
+                        top_k=top_k,
+                        dataset=self.config.huggingface_dataset,
+                        config=self.config.huggingface_config,
+                        split=self.config.huggingface_split,
+                        token=self.config.huggingface_token,
                     ),
                 ),
             ),

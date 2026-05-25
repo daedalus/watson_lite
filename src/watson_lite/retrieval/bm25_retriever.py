@@ -20,7 +20,12 @@ WIKI_SEARCH_LIMIT = 5
 ELASTICSEARCH_URL_ENV = "WATSON_LITE_ELASTICSEARCH_URL"
 ELASTICSEARCH_INDEX_ENV = "WATSON_LITE_ELASTICSEARCH_INDEX"
 ELASTICSEARCH_API_KEY_ENV = "WATSON_LITE_ELASTICSEARCH_API_KEY"
+HUGGINGFACE_DATASET_ENV = "WATSON_LITE_HUGGINGFACE_DATASET"
+HUGGINGFACE_CONFIG_ENV = "WATSON_LITE_HUGGINGFACE_CONFIG"
+HUGGINGFACE_SPLIT_ENV = "WATSON_LITE_HUGGINGFACE_SPLIT"
+HUGGINGFACE_TOKEN_ENV = "WATSON_LITE_HUGGINGFACE_TOKEN"
 ELASTICSEARCH_TIMEOUT_SECONDS = 10
+HUGGINGFACE_DATASET_SERVER_SEARCH = "https://datasets-server.huggingface.co/search"
 # Keep chunks comfortably below the reader's context budget while leaving room
 # for sentence overlap, which reduces edge-truncation during extraction.
 CHUNK_SIZE = 180
@@ -359,7 +364,7 @@ def fetch_wikibooks_passages(
     )
 
 
-def _get_elasticsearch_setting_or_env(value: str | None, env_name: str) -> str:
+def _get_setting_or_env(value: str | None, env_name: str) -> str:
     """Return an explicit setting, or fall back to the corresponding env var."""
     if value is not None:
         return value.strip()
@@ -408,6 +413,169 @@ def _to_passage(
     return Passage(text=text, source=source, url=url)
 
 
+def _huggingface_headers(token: str | None) -> dict[str, str]:
+    """Build Hugging Face headers, adding Bearer auth when configured."""
+    headers: dict[str, str] = {"Accept": "application/json"}
+    stripped = (token or "").strip()
+    if stripped:
+        headers["Authorization"] = f"Bearer {stripped}"
+    return headers
+
+
+def _extract_huggingface_row_text(row_payload: dict[str, Any]) -> str:
+    """Extract passage text from a Hugging Face row payload."""
+    direct_text = (
+        row_payload.get("text")
+        or row_payload.get("content")
+        or row_payload.get("body")
+        or row_payload.get("passage")
+        or row_payload.get("snippet")
+        or row_payload.get("document")
+    )
+    if isinstance(direct_text, str):
+        return direct_text.strip()
+
+    for value in row_payload.values():
+        if isinstance(value, str) and len(value.split()) >= MIN_CHUNK_WORDS:
+            return value.strip()
+    return ""
+
+
+def _parse_huggingface_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return rows/hits/results payload from datasets-server search response."""
+    for field in ("rows", "hits", "results"):
+        rows = data.get(field)
+        if isinstance(rows, list):
+            return [item for item in rows if isinstance(item, dict)]
+    return []
+
+
+def _build_huggingface_passages(
+    rows: list[dict[str, Any]],
+    *,
+    resolved_dataset: str,
+) -> list[Passage]:
+    dataset_url = f"https://huggingface.co/datasets/{resolved_dataset}"
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for item in rows:
+        row_payload = item.get("row")
+        if not isinstance(row_payload, dict):
+            row_payload = item
+        text = _extract_huggingface_row_text(row_payload)
+        if not text:
+            continue
+        dedup_key = _normalize_passage_text(text)
+        if dedup_key in seen_chunks:
+            continue
+        seen_chunks.add(dedup_key)
+        source = (
+            row_payload.get("title")
+            or row_payload.get("source")
+            or row_payload.get("name")
+            or resolved_dataset
+        )
+        if not isinstance(source, str):
+            source = str(source)
+        passages.append(
+            Passage(
+                text=text,
+                source=source,
+                url=dataset_url,
+            )
+        )
+    return passages
+
+
+def fetch_huggingface_passages(  # pylint: disable=too-many-arguments
+    query: str,
+    *,
+    top_k: int = WIKI_SEARCH_LIMIT,
+    dataset: str | None = None,
+    config: str | None = None,
+    split: str | None = None,
+    token: str | None = None,
+) -> list[Passage]:
+    """Fetch passages from a Hugging Face dataset via datasets-server search."""
+    resolved_dataset = _get_setting_or_env(
+        dataset, HUGGINGFACE_DATASET_ENV
+    )
+    resolved_config = _get_setting_or_env(config, HUGGINGFACE_CONFIG_ENV)
+    resolved_split = _get_setting_or_env(split, HUGGINGFACE_SPLIT_ENV)
+    resolved_token = _get_setting_or_env(token, HUGGINGFACE_TOKEN_ENV)
+
+    if not resolved_dataset or not resolved_split:
+        logger.warning(
+            "Hugging Face dataset requested but not configured."
+            " Set %s and %s (or pass config values).",
+            HUGGINGFACE_DATASET_ENV,
+            HUGGINGFACE_SPLIT_ENV,
+        )
+        return []
+
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = (
+        "hf:passages:"
+        f"{resolved_dataset}:{resolved_config}:{resolved_split}:{normalized_query}:top_k={top_k}"
+    )
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    params: dict[str, Any] = {
+        "dataset": resolved_dataset,
+        "split": resolved_split,
+        "q": query,
+        "limit": top_k,
+    }
+    if resolved_config:
+        params["config"] = resolved_config
+
+    try:
+        response = requests.get(
+            HUGGINGFACE_DATASET_SERVER_SEARCH,
+            params=params,
+            headers=_huggingface_headers(resolved_token),
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("Hugging Face datasets-server request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning(
+            "Hugging Face datasets-server request failed: HTTP %s",
+            int(response.status_code),
+        )
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        data = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("Hugging Face datasets-server response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if not isinstance(data, dict):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    raw_rows = _parse_huggingface_rows(data)
+    if not raw_rows:
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages = _build_huggingface_passages(raw_rows, resolved_dataset=resolved_dataset)
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
 def fetch_elasticsearch_passages(
     query: str,
     *,
@@ -416,10 +584,10 @@ def fetch_elasticsearch_passages(
     index: str | None = None,
 ) -> list[Passage]:
     """Fetch passages from an Elasticsearch index."""
-    resolved_base_url = _get_elasticsearch_setting_or_env(
+    resolved_base_url = _get_setting_or_env(
         base_url, ELASTICSEARCH_URL_ENV
     )
-    resolved_index = _get_elasticsearch_setting_or_env(
+    resolved_index = _get_setting_or_env(
         index, ELASTICSEARCH_INDEX_ENV
     )
     if not resolved_base_url or not resolved_index:

@@ -53,6 +53,14 @@ watson-lite \
   --elasticsearch-index wiki_passages \
   "What is Python?"
 
+# Query Hugging Face datasets-server
+watson-lite \
+  --datasets huggingface \
+  --huggingface-dataset ag_news \
+  --huggingface-config default \
+  --huggingface-split train \
+  "What is Python?"
+
 # Benchmark/eval run from dataset
 watson-lite \
   --benchmark-dataset /path/to/benchmark.json \
@@ -178,6 +186,10 @@ Dataset providers:
 - `wikipedia`
 - `wikibooks`
 - `elasticsearch` (configure with `--elasticsearch-url` and `--elasticsearch-index`, or `WATSON_LITE_ELASTICSEARCH_URL` and `WATSON_LITE_ELASTICSEARCH_INDEX`)
+- `huggingface`
+  - required: `--huggingface-dataset`, `--huggingface-split`
+  - optional: `--huggingface-config`, `--huggingface-token`
+  - env vars: `WATSON_LITE_HUGGINGFACE_DATASET`, `WATSON_LITE_HUGGINGFACE_SPLIT`, `WATSON_LITE_HUGGINGFACE_CONFIG`, `WATSON_LITE_HUGGINGFACE_TOKEN`
 
 ## Development
 
