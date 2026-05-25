@@ -192,68 +192,70 @@ Checked-in benchmark smoke dataset: `benchmarks/smoke.json`
 ## Architecture
 
 ```text
-+------------------+
-|  User question   |
-+------------------+
-          |
-          v
-+------------------+      +--------------------------+
-| NLPProcessor     |----->| Query expansion +        |
-| - classify       |      | sub-questions            |
-| - extract entity |      +--------------------------+
-+------------------+                    |
-          |                             v
-          |               +-----------------------------+
-          |               | DatasetQueryEngine          |
-          |               | - Wikipedia REST API        |
-          |               | - Wikibooks REST API        |
-          |               +-----------------------------+
-          |                             |
-          |                             v
-          |               +-----------------------------+
-          |               | Parallel retrieval          |
-          |               | - BM25Retriever             |
-          |               | - VectorRetriever (FAISS)   |
-          |               +-----------------------------+
-          |                             |
-          |                             v
-          |               +-----------------------------+
-          +-------------> | Ranker                      |
-                          | - RRF fusion                |
-                          | - cross-encoder rerank      |
-                          +-----------------------------+
-                                        |
-                                        v
-                          +-----------------------------+
-                          | ExtractiveReader            |
-                          | - answer span extraction    |
-                          +-----------------------------+
-                                        |
-                                        v
-                          +-----------------------------+
-                          | ConfidenceScorer            |
-                          | - rank / graph / type checks|
-                          +-----------------------------+
-                                        |
-                                        v
-                          +-----------------------------+
-                          | FinalAnswer + diagnostics   |
-                          +-----------------------------+
+                          +------------------+
+                          |  User question   |
+                          +------------------+
+                                    |
+                                    v
+                    +-----------------------------+        +-----------------------------+
+                    | NLPProcessor                |------->| WikidataGraph               |
+                    | - classify question         | entity | - enrich extracted entities |
+                    | - extract entities/keywords | names  +-----------------------------+
+                    +-----------------------------+                    | graph_results
+                          |          |                                 |
+                    queries|  sub-    |                                 |
+                           | questions|                                 |
+                           v          v                                 |
+                    +--------------------------+                        |
+                    | Query expansion +        |                        |
+                    | sub-questions            |                        |
+                    +--------------------------+                        |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | DatasetQueryEngine          |                     |
+                    | - Wikipedia REST API        |                     |
+                    | - Wikibooks REST API        |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | Parallel retrieval          |                     |
+                    | - BM25Retriever             |                     |
+                    | - VectorRetriever (FAISS)   |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | Ranker                      |                     |
+                    | - RRF fusion                |                     |
+                    | - cross-encoder rerank      |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    v                                   |
+                    +-----------------------------+                     |
+                    | ExtractiveReader            |                     |
+                    | - answer span extraction    |                     |
+                    +-----------------------------+                     |
+                                    |                                   |
+                                    +-------------------+---------------+
+                                                        |
+                                                        v
+                                        +-----------------------------+
+                                        | ConfidenceScorer            |
+                                        | - extraction score          |
+                                        | - span agreement            |
+                                        | - graph corroboration       |
+                                        | - rank / type-coercion      |
+                                        +-----------------------------+
+                                                        |
+                                                        v
+                                        +-----------------------------+
+                                        | FinalAnswer + diagnostics   |
+                                        +-----------------------------+
 
-                +-----------------------------+
-                | WikidataGraph               |
-                | - enrich extracted entities |
-                +-----------------------------+
-                             |
-                             +------------------------>
-                                                      Ranker / scorer
-
-                +-----------------------------+
-                | SQLite cache                |
-                | - dataset fetches           |
-                | - Wikidata lookups          |
-                | - type coercion             |
-                +-----------------------------+
+SQLite cache (cross-cutting): backs DatasetQueryEngine fetches,
+Wikidata lookups, and type-coercion calls with TTL-expiry entries.
 ```
 
 ## Models Used (all pretrained, inference only)
