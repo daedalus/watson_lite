@@ -544,3 +544,192 @@ class TestWatsonLite:
         assert result.confidence == 0.8
         assert self.pipeline.dataset_query_engine.query.call_count == 2
         assert self.mock_scorer.score.call_count == 2
+
+    def test_parallel_hypothesis_multiple_sub_questions(self) -> None:
+        """Parallel extraction is invoked when multi_hypothesis=True and >1 sub-questions."""
+        passages = [Passage(text="Paris is a city.", source="Wiki", url="u")]
+        ranked = [
+            RankedPassage(
+                passage=passages[0],
+                rrf_score=1.0,
+                cross_score=1.0,
+                final_score=1.0,
+                rank=1,
+            )
+        ]
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="Who is Napoleon and where was he born?",
+            question_type="who",
+            entities=[],
+            noun_chunks=[],
+            root_verb="be",
+            sub_questions=["Who is Napoleon", "where was he born"],
+            keywords=["napoleon"],
+        )
+        self.pipeline = WatsonLite(
+            config=self.base_config.with_feature("multi_hypothesis", True)
+            .with_feature("query_expansion", False)
+            .with_feature("vector_retrieval", False)
+        )
+        self.pipeline.dataset_query_engine.query = MagicMock(return_value=passages)
+        self.mock_bm25.retrieve.return_value = passages
+        self.mock_ranker.rank.return_value = ranked
+        self.mock_reader.extract.return_value = (
+            [
+                AnswerCandidate(
+                    span="Napoleon",
+                    source="Wiki",
+                    url="u",
+                    passage="Paris is a city.",
+                    extraction_score=0.9,
+                    rank=1,
+                )
+            ],
+            0,
+        )
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="Napoleon", confidence=0.8, source="Wiki", url="u"
+        )
+
+        result = self.pipeline.answer(
+            "Who is Napoleon and where was he born?", verbose=False
+        )
+
+        assert result.answer == "Napoleon"
+        # Reader was called twice (once per sub-question, in parallel)
+        assert self.mock_reader.extract.call_count == 2
+
+    def test_per_candidate_retrieval_increments_doc_frequency(self) -> None:
+        """Per-candidate re-retrieval increments doc_frequency for matched candidates."""
+        passages = [Passage(text="Paris is the capital.", source="Wiki", url="u")]
+        ranked = [
+            RankedPassage(
+                passage=passages[0],
+                rrf_score=1.0,
+                cross_score=1.0,
+                final_score=1.0,
+                rank=1,
+            )
+        ]
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="What is the capital of France?",
+            question_type="what",
+            entities=[],
+            noun_chunks=[],
+            root_verb="be",
+            sub_questions=["What is the capital of France?"],
+            keywords=["capital", "france"],
+        )
+        self.pipeline = WatsonLite(
+            config=self.base_config.with_feature("per_candidate_retrieval", True)
+            .with_feature("query_expansion", False)
+            .with_feature("vector_retrieval", False)
+        )
+        # First call = main query; subsequent calls = re-retrieval
+        reretrieval_passage = Passage(
+            text="Paris is the capital of France.", source="Wiki", url="u2"
+        )
+        self.pipeline.dataset_query_engine.query = MagicMock(
+            side_effect=[passages, [reretrieval_passage]]
+        )
+        self.mock_bm25.retrieve.return_value = passages
+        self.mock_ranker.rank.return_value = ranked
+        candidate = AnswerCandidate(
+            span="Paris",
+            source="Wiki",
+            url="u",
+            passage="Paris is the capital.",
+            extraction_score=0.9,
+            rank=1,
+        )
+        self.mock_reader.extract.return_value = ([candidate], 0)
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="Paris", confidence=0.9, source="Wiki", url="u"
+        )
+
+        self.pipeline.answer("What is the capital of France?", verbose=False)
+
+        # The re-retrieved passage contains "paris" so doc_frequency should be bumped
+        assert candidate.doc_frequency >= 2
+
+    def test_verbose_print_answer_with_graph_facts_and_diagnostics(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """verbose=True triggers full _print_answer output including graph facts."""
+        import logging
+
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(config=self.base_config)
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="Gustave Eiffel",
+            confidence=0.85,
+            source="Wikipedia",
+            url="http://example.com",
+            graph_facts=["architect: Gustave Eiffel"],
+            confidence_breakdown={"extraction_model": 0.95},
+        )
+
+        with caplog.at_level(logging.INFO):
+            self.pipeline.answer("test question", verbose=True)
+
+        assert any("ANSWER" in r.message for r in caplog.records)
+        assert any("GRAPH CORROBORATION" in r.message for r in caplog.records)
+
+    def test_iterative_retrieval_empty_refined_passages_skips(self) -> None:
+        """Iterative retrieval gracefully skips pass when refined query returns no passages."""
+        initial_passages = [Passage(text="Paris is a city.", source="Wiki", url="u1")]
+        initial_ranked = [
+            RankedPassage(
+                passage=initial_passages[0],
+                rrf_score=1.0,
+                cross_score=1.0,
+                final_score=1.0,
+                rank=1,
+            )
+        ]
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="What is Paris?",
+            question_type="what",
+            entities=[],
+            noun_chunks=["Paris"],
+            root_verb="be",
+            sub_questions=["What is Paris?"],
+            keywords=["paris"],
+        )
+        self.pipeline = WatsonLite(
+            config=self.base_config.with_feature("iterative_retrieval", True)
+            .with_feature("query_expansion", False)
+            .with_feature("vector_retrieval", False)
+        )
+        # First call returns passages; refined query returns empty
+        self.pipeline.dataset_query_engine.query = MagicMock(
+            side_effect=[initial_passages, []]
+        )
+        self.mock_bm25.retrieve.side_effect = [initial_passages]
+        self.mock_ranker.rank.side_effect = [initial_ranked]
+        self.mock_reader.extract.side_effect = [
+            (
+                [
+                    AnswerCandidate(
+                        span="Paris",
+                        source="Wiki",
+                        url="u1",
+                        passage="Paris is a city.",
+                        extraction_score=0.2,
+                        rank=1,
+                    )
+                ],
+                0,
+            )
+        ]
+        low_confidence_answer = FinalAnswer(
+            answer="Paris", confidence=0.1, source="Wiki", url="u1"
+        )
+        self.mock_scorer.score.return_value = low_confidence_answer
+
+        result = self.pipeline.answer("What is Paris?", verbose=False)
+
+        # Should return the original low-confidence answer (refined pass was skipped)
+        assert result.answer == "Paris"
+        # Scorer called only once (no refined pass succeeded)
+        assert self.mock_scorer.score.call_count == 1
