@@ -57,11 +57,20 @@ class TestWatsonLite:
 
         self.fetch_patcher = patch("watson_lite.pipeline.fetch_wikipedia_passages")
         self.mock_fetch = self.fetch_patcher.start()
-        self.fetch_page_patcher = patch("watson_lite.pipeline.fetch_wikipedia_page_by_title")
+        self.fetch_page_patcher = patch(
+            "watson_lite.pipeline.fetch_wikipedia_page_by_title"
+        )
         self.mock_fetch_page = self.fetch_page_patcher.start()
         self.mock_fetch_page.return_value = []
 
-        self.pipeline = WatsonLite()
+        self.base_config = (
+            FeatureConfig.baseline()
+            .with_feature("multi_hypothesis", False)
+            .with_feature("per_candidate_retrieval", False)
+            .with_feature("bidirectional_validation", False)
+            .with_feature("iterative_retrieval", False)
+        )
+        self.pipeline = WatsonLite(config=self.base_config)
 
     def _setup_success_flow(self) -> None:
         self.mock_nlp.process.return_value = ParsedQuestion(
@@ -284,12 +293,12 @@ class TestWatsonLite:
         self.mock_reader.extract.return_value = []
         self.mock_scorer.score.return_value = answer_obj
 
-        # First call — indexing should happen.
+        # First call should trigger indexing for both retrievers.
         self.pipeline.answer("test", verbose=False)
         assert self.mock_bm25.index.call_count == 1
         assert self.mock_vector.index_passages.call_count == 1
 
-        # Second call with identical passages — indexing must be skipped.
+        # Second call reuses the same passages and should skip re-indexing.
         self.pipeline.answer("test", verbose=False)
         assert self.mock_bm25.index.call_count == 1
         assert self.mock_vector.index_passages.call_count == 1
@@ -324,11 +333,13 @@ class TestWatsonLite:
         self.mock_reader.extract.return_value = []
         self.mock_scorer.score.return_value = answer_obj
 
+        # Initial passages are indexed on the first answer attempt.
         self.mock_fetch.return_value = [
             Passage(text="first passage", source="A", url="http://a.com")
         ]
         self.pipeline.answer("q1", verbose=False)
 
+        # A different passage set should force a second indexing pass.
         self.mock_fetch.return_value = [
             Passage(text="different passage", source="B", url="http://b.com")
         ]
@@ -340,7 +351,7 @@ class TestWatsonLite:
     def test_vector_retrieval_toggle_off(self) -> None:
         self._setup_success_flow()
         self.pipeline = WatsonLite(
-            config=FeatureConfig.baseline().with_feature("vector_retrieval", False)
+            config=self.base_config.with_feature("vector_retrieval", False)
         )
 
         self.pipeline.answer("test question", verbose=False)
@@ -351,7 +362,7 @@ class TestWatsonLite:
     def test_query_expansion_toggle_off_uses_raw_question_once(self) -> None:
         self._setup_success_flow()
         self.pipeline = WatsonLite(
-            config=FeatureConfig.baseline().with_feature("query_expansion", False)
+            config=self.base_config.with_feature("query_expansion", False)
         )
 
         self.pipeline.answer("test question", verbose=False)
@@ -361,7 +372,7 @@ class TestWatsonLite:
     def test_graph_enrichment_toggle_off(self) -> None:
         self._setup_success_flow()
         self.pipeline = WatsonLite(
-            config=FeatureConfig.baseline().with_feature("graph_enrichment", False)
+            config=self.base_config.with_feature("graph_enrichment", False)
         )
 
         self.pipeline.answer("test question", verbose=False)
@@ -371,9 +382,7 @@ class TestWatsonLite:
     def test_cross_encoder_reranking_toggle_off(self) -> None:
         self._setup_success_flow()
         self.pipeline = WatsonLite(
-            config=FeatureConfig.baseline().with_feature(
-                "cross_encoder_reranking", False
-            )
+            config=self.base_config.with_feature("cross_encoder_reranking", False)
         )
 
         self.pipeline.answer("test question", verbose=False)
@@ -384,9 +393,9 @@ class TestWatsonLite:
     def test_scoring_toggles_off(self) -> None:
         self._setup_success_flow()
         self.pipeline = WatsonLite(
-            config=FeatureConfig.baseline()
-            .with_feature("question_type_bonus", False)
-            .with_feature("type_coercion", False)
+            config=self.base_config.with_feature(
+                "question_type_bonus", False
+            ).with_feature("type_coercion", False)
         )
 
         self.pipeline.answer("test question", verbose=False)
@@ -397,3 +406,141 @@ class TestWatsonLite:
             is False
         )
         assert self.mock_scorer.score.call_args.kwargs["enable_type_coercion"] is False
+
+    def test_multi_hypothesis_adds_title_candidates(self) -> None:
+        self._setup_success_flow()
+        self.pipeline = WatsonLite(
+            config=self.base_config.with_feature("multi_hypothesis", True)
+        )
+
+        self.pipeline.answer("test question", verbose=False)
+
+        scored_candidates = self.mock_scorer.score.call_args.args[0]
+        assert any(candidate.source == "title_match" for candidate in scored_candidates)
+        assert any(candidate.span == "Eiffel Tower" for candidate in scored_candidates)
+
+    def test_per_candidate_retrieval_disabled_skips_extra_query(self) -> None:
+        passages = [Passage(text="Paris is in France.", source="Wiki", url="u")]
+        ranked = [
+            RankedPassage(
+                passage=passages[0],
+                rrf_score=1.0,
+                cross_score=1.0,
+                final_score=1.0,
+                rank=1,
+            )
+        ]
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="Where is Paris?",
+            question_type="where",
+            entities=[],
+            noun_chunks=["Paris"],
+            root_verb="be",
+            sub_questions=["Where is Paris?"],
+            keywords=["paris"],
+        )
+        self.pipeline = WatsonLite(
+            config=self.base_config.with_feature("query_expansion", False)
+        )
+        self.pipeline.dataset_query_engine.query = MagicMock(return_value=passages)
+        self.mock_bm25.retrieve.return_value = passages
+        self.mock_vector.retrieve.return_value = passages
+        self.mock_ranker.rank.return_value = ranked
+        self.mock_reader.extract.return_value = [
+            AnswerCandidate(
+                span="Paris",
+                source="Wiki",
+                url="u",
+                passage="Paris is in France.",
+                extraction_score=0.9,
+                rank=1,
+            )
+        ]
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="Paris", confidence=0.8, source="Wiki", url="u"
+        )
+
+        self.pipeline.answer("Where is Paris?", verbose=False)
+
+        assert self.pipeline.dataset_query_engine.query.call_count == 1
+
+    def test_iterative_retrieval_triggers_second_pass(self) -> None:
+        initial_passages = [Passage(text="Paris is a city.", source="Wiki", url="u1")]
+        refined_passages = [
+            Passage(text="Paris is the capital of France.", source="Wiki", url="u2")
+        ]
+        initial_ranked = [
+            RankedPassage(
+                passage=initial_passages[0],
+                rrf_score=1.0,
+                cross_score=1.0,
+                final_score=1.0,
+                rank=1,
+            )
+        ]
+        refined_ranked = [
+            RankedPassage(
+                passage=refined_passages[0],
+                rrf_score=1.0,
+                cross_score=1.0,
+                final_score=1.0,
+                rank=1,
+            )
+        ]
+        self.mock_nlp.process.return_value = ParsedQuestion(
+            raw="What is the capital of France?",
+            question_type="what",
+            entities=[],
+            noun_chunks=["the capital of France"],
+            root_verb="be",
+            sub_questions=["What is the capital of France?"],
+            keywords=["capital", "france"],
+        )
+        self.pipeline = WatsonLite(
+            config=self.base_config.with_feature("iterative_retrieval", True)
+            .with_feature("query_expansion", False)
+            .with_feature("vector_retrieval", False)
+        )
+        self.pipeline.dataset_query_engine.query = MagicMock(
+            side_effect=[initial_passages, refined_passages]
+        )
+        self.mock_bm25.retrieve.side_effect = [initial_passages, refined_passages]
+        self.mock_ranker.rank.side_effect = [initial_ranked, refined_ranked]
+        self.mock_reader.extract.side_effect = [
+            (
+                [
+                    AnswerCandidate(
+                        span="Paris",
+                        source="Wiki",
+                        url="u1",
+                        passage="Paris is a city.",
+                        extraction_score=0.4,
+                        rank=1,
+                    )
+                ],
+                0,
+            ),
+            (
+                [
+                    AnswerCandidate(
+                        span="Paris",
+                        source="Wiki",
+                        url="u2",
+                        passage="Paris is the capital of France.",
+                        extraction_score=0.9,
+                        rank=1,
+                    )
+                ],
+                0,
+            ),
+        ]
+        self.mock_scorer.score.side_effect = [
+            FinalAnswer(answer="Paris", confidence=0.2, source="Wiki", url="u1"),
+            FinalAnswer(answer="Paris", confidence=0.8, source="Wiki", url="u2"),
+        ]
+
+        result = self.pipeline.answer("What is the capital of France?", verbose=False)
+
+        assert result.confidence == 0.8
+        assert self.pipeline.dataset_query_engine.query.call_count == 2
+        assert self.mock_scorer.score.call_count == 2

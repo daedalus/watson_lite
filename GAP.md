@@ -21,10 +21,17 @@ codebase.
 | Query expansion variants | `retrieval/query_formulation.py` |
 | Hybrid retrieval over unstructured text | `BM25Retriever` + `VectorRetriever`, parallel via `ThreadPoolExecutor` |
 | Structured knowledge enrichment | `WikidataGraph` (Wikidata REST API) |
+| Multiple hypothesis generators | Extractive reader + title/entity hypotheses in `pipeline.py` |
+| Parallel sub-question extraction | `ThreadPoolExecutor` dispatch in `pipeline.py` |
+| Per-candidate evidence re-retrieval | Candidate-specific `DatasetQueryEngine.query(...)` passes in `pipeline.py` |
+| Bidirectional answer validation | `scoring/double_check.py` + `pipeline.py` |
 | Candidate scoring — extraction, span agreement, graph, rank, type coercion | `ConfidenceScorer` in `core/extractor.py` |
+| Structured explanation / evidence chain | `EvidenceItem` + `FinalAnswer.evidence_chain` in `core/models.py` / `core/extractor.py` |
 | Lexical Answer Type + Wikidata type-hierarchy coercion | `scoring/type_coercion.py`, `LAT_QID_MAP` in `core/nlp.py` |
+| SRL + optional coreference | Dependency-parse SRL and optional `coreferee` hooks in `core/nlp.py` |
 | Answer normalization / merging | `scoring/answer_merging.py` |
 | Temporal + geospatial consistency signals | `scoring/consistency.py` |
+| Iterative multi-pass retrieval | Confidence-triggered re-query loop in `pipeline.py` |
 | Per-stage latency tracking | `stage_latencies` dict in `pipeline.py` |
 | Lazy model loading | `_get_nlp`, `_get_vector`, `_get_reader`, etc. in `pipeline.py` |
 | SQLite cache with TTL | `core/cache.py` |
@@ -58,18 +65,12 @@ Wikipedia dump.
 
 #### GAP-02 — Single hypothesis generator (Paper 1)
 
-**What DeepQA does:** Ran dozens of independent candidate generators in
-parallel — Wikipedia title matching, infobox field extraction, alias/redirect
-expansion, pattern matching over named entities, structured DB lookups, synonym
-expansion.  Each generator produced its own candidates, which were then scored
-and merged.
+**Status: Implemented**
 
-**What watson-lite does:** A single generator: the extractive reader applied to
-retrieved passages.  There is no title-match generator (candidate = Wikipedia
-article title), no infobox extractor, no alias/redirect expansion.
-
-**Where to fix:** `pipeline.py` — introduce a `CandidateGenerator` abstraction
-and register multiple implementations.
+watson-lite now combines the extractive reader with title/entity-driven
+synthetic candidates in `pipeline.py`.  The `multi_hypothesis` feature flag
+controls this behavior, and the additional candidates are merged into the same
+scoring path as extractive spans.
 
 ---
 
@@ -92,55 +93,45 @@ logistic regression.
 
 #### GAP-04 — No per-candidate evidence re-retrieval (Paper 1)
 
-**What DeepQA does:** For each candidate answer, performs a second retrieval pass
-— querying the corpus for passages that contain both question keywords *and* the
-candidate — to gather supporting and contradicting evidence independently.
+**Status: Implemented**
 
-**What watson-lite does:** Single retrieval pass for the question only.  Span
-agreement across passages is a proxy but does not accumulate cross-document
-occurrence counts per candidate.
-
-**Where to fix:** `pipeline.py` `answer()` — after extraction, for each unique
-candidate span issue a follow-up `DatasetQueryEngine.query(span + question_keywords)`.
+`pipeline.py` now performs candidate-specific follow-up retrieval for the top
+candidate spans when `per_candidate_retrieval` is enabled.  Returned passages
+increase `AnswerCandidate.doc_frequency`, which is then folded into
+`ConfidenceScorer` as an explicit frequency signal.
 
 ---
 
 #### GAP-05 — No answer re-querying / bidirectional validation (Paper 1)
 
-**What DeepQA does:** Uses the candidate answer as a query and checks whether the
-retrieved results mention the original question context ("double-check").
+**Status: Implemented**
 
-**What watson-lite does:** Not implemented.
-
-**Where to fix:** New `scoring/double_check.py` — take top candidate spans, query
-Wikipedia for each, check for question-term overlap in returned passages, return a
-signal in [0, 1].
+`scoring/double_check.py` adds bidirectional validation by re-querying the
+corpus with the top span and scoring question-keyword overlap in the returned
+passages.  `pipeline.py` records the `double_check` stage latency and passes the
+result into `ConfidenceScorer` as `bidirectional_signal`.
 
 ---
 
 #### GAP-06 — Parallel hypothesis scoring (Paper 2)
 
-**What DeepQA does:** Every scoring component ran simultaneously across all
-candidates on thousands of cores.
+**Status: Implemented**
 
-**What watson-lite does:** Retrieval is parallelized (2 threads).  Extraction over
-sub-questions, graph enrichment, ranking, and scoring are all sequential.
-
-**Where to fix:** `pipeline.py` `_retrieve_parallel` — extend to also dispatch
-graph enrichment and (optionally) per-passage extraction in parallel.
+When `multi_hypothesis` is enabled and a question decomposes into multiple
+sub-questions, `pipeline.py` now dispatches extractive runs in parallel with a
+`ThreadPoolExecutor`.  This extends the existing retrieval parallelism to the
+candidate generation path.
 
 ---
 
 #### GAP-07 — Shallow NLP: no SRL or coreference (Paper 1)
 
-**What DeepQA does:** Used semantic role labeling (SRL), full dependency parsing,
-and coreference resolution to understand question structure and passage arguments.
+**Status: Implemented**
 
-**What watson-lite does:** `en_core_web_sm` for shallow NER and noun chunks, plus
-root-verb extraction.  No SRL, no coreference.
-
-**Where to fix:** `core/nlp.py` — optionally load spaCy's `en_core_web_trf` or
-add an `srl` extra using `allennlp-models` for SRL.
+`core/nlp.py` now exposes lightweight dependency-parse SRL frames and optional
+coreference clusters when `semantic_nlp` is enabled.  SRL is derived from spaCy
+verb dependencies, and `coreferee` is attached opportunistically when the
+component is available.
 
 ---
 
@@ -205,28 +196,23 @@ mappings; no domain ontology layer.
 
 #### GAP-12 — No structured explanation / evidence chain (Paper 3)
 
-**What DeepQA does:** Returned a ranked evidence chain with passage citations,
-sentence-level grounding, and property links between the candidate and the answer
-type.
+**Status: Implemented**
 
-**What watson-lite does:** `FinalAnswer.supporting_passages` (raw text slices) and
-`graph_facts` (property: value strings) — no structured span→passage→property
-chain.
-
-**Where to fix:** `core/models.py` — add an `EvidenceItem` dataclass (passage,
-sentence, span offset, graph property); populate it in `ConfidenceScorer.score`.
+`core/models.py` now defines `EvidenceItem`, and `FinalAnswer` carries a full
+`evidence_chain`.  `ConfidenceScorer.score` populates sentence-grounded passage
+evidence plus graph-fact evidence with optional property labels.
 
 ---
 
 #### GAP-13 — Single-pass retrieval; no iterative re-query (Paper 3)
 
-**What DeepQA does:** Multi-pass loops — retrieve, score, identify low-confidence
-areas, re-query with refined terms.
+**Status: Implemented**
 
-**What watson-lite does:** Strictly single-pass: one retrieval → one ranking →
-one extraction, no feedback loop.
-
-**Where to fix:** `pipeline.py` `answer()` — after extraction, if `best.extraction_score < threshold`, generate a follow-up query from the partial answer and re-retrieve.
+`pipeline.py` now supports confidence-triggered iterative re-querying via the
+`iterative_retrieval`, `max_retrieval_passes`, and
+`iterative_retrieval_threshold` settings.  Low-confidence answers can trigger
+additional retrieval, ranking, extraction, and scoring passes, with total time
+tracked in the `iterative_retrieval` latency bucket.
 
 ---
 
@@ -261,20 +247,20 @@ correct) triples; add a `train_from_log` utility that feeds them into the
 
 ## Priority order for implementation
 
-| Priority | Gap | Effort |
-|---|---|---|
-| 1 | GAP-01 offline index | High |
-| 2 | GAP-03 learned scorer | Medium |
-| 3 | GAP-02 multiple hypothesis generators | High |
-| 4 | GAP-04 per-candidate re-retrieval | Medium |
-| 5 | GAP-10 confidence threshold / abstention | Low |
-| 6 | GAP-05 bidirectional validation | Medium |
-| 7 | GAP-06 parallel hypothesis scoring | Low |
-| 8 | GAP-08 textual entailment | Medium |
-| 9 | GAP-07 richer NLP (SRL, coref) | High |
-| 10 | GAP-09 source diversity | Low |
-| 11 | GAP-11 domain ontologies | Low |
-| 12 | GAP-12 structured explanation | Low |
-| 13 | GAP-13 iterative re-query | Low |
-| 14 | GAP-14 UIMA dataflow | Low |
-| 15 | GAP-15 learning from feedback | Low |
+| Priority | Gap | Effort | Status |
+|---|---|---|---|
+| 1 | GAP-01 offline index | High | Open |
+| 2 | GAP-03 learned scorer | Medium | Open |
+| 3 | GAP-10 confidence threshold / abstention | Low | Open |
+| 4 | GAP-08 textual entailment | Medium | Open |
+| 5 | GAP-09 source diversity | Low | Open |
+| 6 | GAP-11 domain ontologies | Low | Open |
+| 7 | GAP-14 UIMA dataflow | Low | Open |
+| 8 | GAP-15 learning from feedback | Low | Open |
+| — | GAP-02 multiple hypothesis generators | High | Implemented |
+| — | GAP-04 per-candidate re-retrieval | Medium | Implemented |
+| — | GAP-05 bidirectional validation | Medium | Implemented |
+| — | GAP-06 parallel hypothesis scoring | Low | Implemented |
+| — | GAP-07 richer NLP (SRL, coref) | High | Implemented |
+| — | GAP-12 structured explanation | Low | Implemented |
+| — | GAP-13 iterative re-query | Low | Implemented |

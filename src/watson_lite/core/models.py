@@ -20,6 +20,16 @@ class RankedPassage:
 
 
 @dataclass
+class EvidenceItem:
+    passage_text: str
+    sentence: str
+    span: str
+    span_start: int
+    span_end: int
+    graph_property: str | None = None
+
+
+@dataclass
 class AnswerCandidate:
     span: str
     source: str
@@ -28,6 +38,7 @@ class AnswerCandidate:
     extraction_score: float
     rank: int
     graph_corroborated: bool = False
+    doc_frequency: int = 1
 
 
 @dataclass
@@ -57,6 +68,7 @@ class FinalAnswer:
     graph_facts: list[str] = field(default_factory=list)
     confidence_breakdown: dict[str, float | str] = field(default_factory=dict)
     diagnostics: AnswerDiagnostics | None = None
+    evidence_chain: list[EvidenceItem] = field(default_factory=list)
 
 
 @dataclass
@@ -86,3 +98,5 @@ class ParsedQuestion:
     keywords: list[str] = field(default_factory=list)
     lat: str | None = None
     lat_qids: list[str] = field(default_factory=list)
+    srl_frames: list[dict[str, str]] = field(default_factory=list)
+    coref_clusters: list[list[str]] = field(default_factory=list)

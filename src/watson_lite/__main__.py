@@ -111,6 +111,36 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Enable/disable merging equivalent answers via Wikidata QID",
     )
+    parser.add_argument(
+        "--multi-hypothesis",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable multiple hypothesis generators",
+    )
+    parser.add_argument(
+        "--per-candidate-retrieval",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable per-candidate evidence re-retrieval",
+    )
+    parser.add_argument(
+        "--bidirectional-validation",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable bidirectional answer validation",
+    )
+    parser.add_argument(
+        "--iterative-retrieval",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable iterative multi-pass retrieval",
+    )
+    parser.add_argument(
+        "--semantic-nlp",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable semantic NLP helpers",
+    )
 
     parser.add_argument("--wiki-top-k", type=int, default=5)
     parser.add_argument(
@@ -122,6 +152,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retrieval-top-k", type=int, default=20)
     parser.add_argument("--rerank-top-k", type=int, default=10)
     parser.add_argument("--extract-top-k", type=int, default=5)
+    parser.add_argument("--max-retrieval-passes", type=int, default=2)
+    parser.add_argument("--iterative-retrieval-threshold", type=float, default=0.3)
 
     parser.add_argument("--benchmark-dataset")
     parser.add_argument("--benchmark-output-json", default="benchmark_results.json")
@@ -169,6 +201,8 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "retrieval_top_k": args.retrieval_top_k,
         "rerank_top_k": args.rerank_top_k,
         "extraction_top_k": args.extract_top_k,
+        "max_retrieval_passes": args.max_retrieval_passes,
+        "iterative_retrieval_threshold": args.iterative_retrieval_threshold,
     }
     for name in (
         "vector_retrieval",
@@ -180,6 +214,11 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "term_match",
         "consistency",
         "answer_merging",
+        "multi_hypothesis",
+        "per_candidate_retrieval",
+        "bidirectional_validation",
+        "iterative_retrieval",
+        "semantic_nlp",
     ):
         value = getattr(args, name)
         if value is not None:

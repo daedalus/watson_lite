@@ -105,24 +105,27 @@ def _write_dataset(path: Path, samples: list[dict[str, Any]] | None = None) -> N
 
 
 class TestBuildAblationProfiles:
-    def test_baseline_profile_has_all_features_enabled(self) -> None:
+    def test_baseline_profile_matches_featureconfig_baseline(self) -> None:
         profiles = build_ablation_profiles()
         baseline = profiles["baseline"]
+        expected = FeatureConfig.baseline()
         for feature in OPTIONAL_FEATURES:
-            assert getattr(baseline, feature) is True, (
-                f"baseline should have {feature}=True"
+            assert getattr(baseline, feature) is getattr(expected, feature), (
+                f"baseline should have {feature}={getattr(expected, feature)}"
             )
 
-    def test_minimal_profile_has_all_features_disabled(self) -> None:
+    def test_minimal_profile_matches_featureconfig_minimal(self) -> None:
         profiles = build_ablation_profiles()
         minimal = profiles["minimal"]
+        expected = FeatureConfig.minimal()
         for feature in OPTIONAL_FEATURES:
-            assert getattr(minimal, feature) is False, (
-                f"minimal should have {feature}=False"
+            assert getattr(minimal, feature) is getattr(expected, feature), (
+                f"minimal should have {feature}={getattr(expected, feature)}"
             )
 
     def test_baseline_off_profiles_disable_only_the_named_feature(self) -> None:
         profiles = build_ablation_profiles()
+        baseline = profiles["baseline"]
         for feature in OPTIONAL_FEATURES:
             profile_name = f"baseline_{feature}_off"
             cfg = profiles[profile_name]
@@ -132,12 +135,13 @@ class TestBuildAblationProfiles:
             for other in OPTIONAL_FEATURES:
                 if other == feature:
                     continue
-                assert getattr(cfg, other) is True, (
-                    f"{profile_name}: expected {other}=True"
+                assert getattr(cfg, other) is getattr(baseline, other), (
+                    f"{profile_name}: expected {other}={getattr(baseline, other)}"
                 )
 
     def test_minimal_on_profiles_enable_only_the_named_feature(self) -> None:
         profiles = build_ablation_profiles()
+        minimal = profiles["minimal"]
         for feature in OPTIONAL_FEATURES:
             profile_name = f"minimal_{feature}_on"
             cfg = profiles[profile_name]
@@ -147,8 +151,8 @@ class TestBuildAblationProfiles:
             for other in OPTIONAL_FEATURES:
                 if other == feature:
                     continue
-                assert getattr(cfg, other) is False, (
-                    f"{profile_name}: expected {other}=False"
+                assert getattr(cfg, other) is getattr(minimal, other), (
+                    f"{profile_name}: expected {other}={getattr(minimal, other)}"
                 )
 
     def test_each_optional_feature_has_both_variant_profiles(self) -> None:
@@ -177,8 +181,9 @@ class TestBuildAblationProfiles:
             differing = [
                 f for f in OPTIONAL_FEATURES if getattr(cfg, f) != getattr(baseline, f)
             ]
-            assert differing == [feature], (
-                f"baseline_{feature}_off should differ from baseline only in {feature}"
+            expected = [feature] if getattr(baseline, feature) is not False else []
+            assert differing == expected, (
+                f"baseline_{feature}_off should differ from baseline by {expected}"
             )
 
     def test_minimal_on_profile_differs_from_minimal_by_exactly_one_flag(
@@ -221,7 +226,9 @@ class TestAblationSweepExecution:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
             mock_cache.return_value = Cache(db_path=str(tmp_path / "cache1.sqlite3"))
             run_benchmark_profiles(
@@ -254,7 +261,9 @@ class TestAblationSweepExecution:
         custom = FeatureConfig.baseline().with_feature("vector_retrieval", False)
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
             mock_cache.return_value = Cache(db_path=str(tmp_path / "cache2.sqlite3"))
             run_benchmark_profiles(
@@ -286,9 +295,13 @@ class TestAblationSweepExecution:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
-            mock_cache.return_value = Cache(db_path=str(tmp_path / ".answer_cache.sqlite3"))
+            mock_cache.return_value = Cache(
+                db_path=str(tmp_path / ".answer_cache.sqlite3")
+            )
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -300,7 +313,14 @@ class TestAblationSweepExecution:
         baseline_result = next(r for r in results if r.profile == "baseline")
         other_results = [r for r in results if r.profile != "baseline"]
         assert baseline_result.report.accuracy_at_1 == 1.0
-        assert all(r.report.accuracy_at_1 == 0.0 for r in other_results)
+        for result in other_results:
+            # FeatureConfig is a dataclass, so baseline-equivalent configs compare
+            # equal; baseline_semantic_nlp_off matches baseline because semantic_nlp
+            # defaults to False even in the baseline profile.
+            expected_accuracy = (
+                1.0 if result.config == FeatureConfig.baseline() else 0.0
+            )
+            assert result.report.accuracy_at_1 == expected_accuracy
 
 
 # ---------------------------------------------------------------------------
@@ -329,9 +349,13 @@ class TestAblationOutputArtifacts:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
-            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_sweep.sqlite3"))
+            mock_cache.return_value = Cache(
+                db_path=str(tmp_path / "cache_sweep.sqlite3")
+            )
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -551,9 +575,13 @@ class TestRegressionDetection:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
-            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_reg1.sqlite3"))
+            mock_cache.return_value = Cache(
+                db_path=str(tmp_path / "cache_reg1.sqlite3")
+            )
             results, regressions = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.minimal(),
@@ -585,9 +613,13 @@ class TestRegressionDetection:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
-            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_reg2.sqlite3"))
+            mock_cache.return_value = Cache(
+                db_path=str(tmp_path / "cache_reg2.sqlite3")
+            )
             _, regressions = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.minimal(),
@@ -632,9 +664,13 @@ class TestAblationDatasetFormats:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
-            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_fmt1.sqlite3"))
+            mock_cache.return_value = Cache(
+                db_path=str(tmp_path / "cache_fmt1.sqlite3")
+            )
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
@@ -672,9 +708,13 @@ class TestAblationDatasetFormats:
 
         with (
             patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-            patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+            patch(
+                "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+            ) as mock_cache,
         ):
-            mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_fmt2.sqlite3"))
+            mock_cache.return_value = Cache(
+                db_path=str(tmp_path / "cache_fmt2.sqlite3")
+            )
             results, _ = run_benchmark_profiles(
                 dataset_path=str(dataset),
                 config=FeatureConfig.baseline(),
