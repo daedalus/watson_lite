@@ -9,14 +9,20 @@ from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
 class TestConfidenceScorer:
     def setup_method(self) -> None:
         self.scorer = ConfidenceScorer()
-        self.resolve_patcher = patch(
+        self.merge_resolve_patcher = patch(
             "watson_lite.scoring.answer_merging.resolve_span_to_qid"
         )
-        self.mock_resolve = self.resolve_patcher.start()
-        self.mock_resolve.return_value = None
+        self.extractor_resolve_patcher = patch(
+            "watson_lite.core.extractor.resolve_span_to_qid"
+        )
+        self.mock_merge_resolve = self.merge_resolve_patcher.start()
+        self.mock_extractor_resolve = self.extractor_resolve_patcher.start()
+        self.mock_merge_resolve.return_value = None
+        self.mock_extractor_resolve.return_value = None
 
     def teardown_method(self) -> None:
-        self.resolve_patcher.stop()
+        self.merge_resolve_patcher.stop()
+        self.extractor_resolve_patcher.stop()
 
     def test_no_candidates(self) -> None:
         result = self.scorer.score([], [], "who")
@@ -29,7 +35,7 @@ class TestConfidenceScorer:
                 span="Paris",
                 source="src",
                 url="",
-                passage="",
+                passage="Paris is in France.",
                 extraction_score=0.9,
                 rank=1,
             )
@@ -44,7 +50,7 @@ class TestConfidenceScorer:
                 span="Gustave Eiffel",
                 source="src",
                 url="",
-                passage="",
+                passage="Gustave Eiffel designed the tower.",
                 extraction_score=0.9,
                 rank=1,
             )
@@ -72,7 +78,7 @@ class TestConfidenceScorer:
                 span="Paris",
                 source="a",
                 url="",
-                passage="",
+                passage="Paris is in France.",
                 extraction_score=0.9,
                 rank=1,
             ),
@@ -80,7 +86,7 @@ class TestConfidenceScorer:
                 span="Paris",
                 source="b",
                 url="",
-                passage="",
+                passage="Paris is also called the City of Light.",
                 extraction_score=0.8,
                 rank=2,
             ),
@@ -88,7 +94,7 @@ class TestConfidenceScorer:
                 span="London",
                 source="c",
                 url="",
-                passage="",
+                passage="London is in the UK.",
                 extraction_score=0.7,
                 rank=3,
             ),
@@ -105,7 +111,7 @@ class TestConfidenceScorer:
                 span="Paris",
                 source="a",
                 url="",
-                passage="",
+                passage="Paris is in France.",
                 extraction_score=0.9,
                 rank=6,
             ),
@@ -119,7 +125,7 @@ class TestConfidenceScorer:
                 span="Paris",
                 source="a",
                 url="",
-                passage="",
+                passage="Paris is in France.",
                 extraction_score=0.9,
                 rank=1,
             ),
@@ -133,7 +139,7 @@ class TestConfidenceScorer:
                 span="Gustave Eiffel",
                 source="a",
                 url="",
-                passage="",
+                passage="Gustave Eiffel designed the tower.",
                 extraction_score=0.9,
                 rank=1,
             ),
@@ -152,7 +158,7 @@ class TestConfidenceScorer:
                 span="Gustave Eiffel",
                 source="a",
                 url="",
-                passage="",
+                passage="Gustave Eiffel designed the tower.",
                 extraction_score=0.9,
                 rank=1,
             ),
@@ -167,6 +173,119 @@ class TestConfidenceScorer:
             )
             mock_tc.assert_not_called()
             assert result.confidence_breakdown["type_coercion"] == 0.0
+
+    def test_doc_frequency_signal_increases_confidence(self) -> None:
+        low = self.scorer.score(
+            [
+                AnswerCandidate(
+                    span="Paris",
+                    source="a",
+                    url="",
+                    passage="Paris is the capital of France.",
+                    extraction_score=0.9,
+                    rank=1,
+                    doc_frequency=1,
+                ),
+                AnswerCandidate(
+                    span="London",
+                    source="b",
+                    url="",
+                    passage="London is the capital of the United Kingdom.",
+                    extraction_score=0.4,
+                    rank=2,
+                    doc_frequency=3,
+                ),
+            ],
+            [],
+            "where",
+        )
+
+        high = self.scorer.score(
+            [
+                AnswerCandidate(
+                    span="Paris",
+                    source="a",
+                    url="",
+                    passage="Paris is the capital of France.",
+                    extraction_score=0.9,
+                    rank=1,
+                    doc_frequency=4,
+                ),
+                AnswerCandidate(
+                    span="London",
+                    source="b",
+                    url="",
+                    passage="London is the capital of the United Kingdom.",
+                    extraction_score=0.4,
+                    rank=2,
+                    doc_frequency=1,
+                ),
+            ],
+            [],
+            "where",
+        )
+
+        assert high.confidence > low.confidence
+        # With doc_frequency=1 and a max competitor frequency of 3, the
+        # normalized signal is 1 / 3 ≈ 0.333.
+        assert low.confidence_breakdown["frequency_signal"] == pytest.approx(
+            0.333, abs=0.01
+        )
+        assert high.confidence_breakdown["frequency_signal"] == 1.0
+
+    def test_evidence_chain_is_populated(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Gustave Eiffel",
+                source="a",
+                url="",
+                passage="The Eiffel Tower is in Paris. Gustave Eiffel designed it.",
+                extraction_score=0.9,
+                rank=1,
+            )
+        ]
+        graph = [
+            GraphResult(
+                entity_name="Eiffel Tower",
+                wikidata_id="Q243",
+                facts=[
+                    EntityFact(
+                        entity="Q243",
+                        property_label="architect",
+                        value="Gustave Eiffel",
+                    )
+                ],
+            )
+        ]
+
+        result = self.scorer.score(candidates, graph, "who")
+
+        assert result.evidence_chain
+        assert result.evidence_chain[0].span == "Gustave Eiffel"
+        assert any(item.graph_property == "architect" for item in result.evidence_chain)
+
+    def test_bidirectional_signal_affects_breakdown(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="a",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.9,
+                rank=1,
+            )
+        ]
+
+        without_signal = self.scorer.score(candidates, [], "where")
+        with_signal = self.scorer.score(
+            candidates,
+            [],
+            "where",
+            bidirectional_signal=1.0,
+        )
+
+        assert with_signal.confidence > without_signal.confidence
+        assert with_signal.confidence_breakdown["bidirectional_signal"] == 1.0
 
 
 class TestQuestionTypeBonus:

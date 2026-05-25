@@ -15,6 +15,7 @@ else:
 
 from watson_lite.core.models import (
     AnswerCandidate,
+    EvidenceItem,
     FinalAnswer,
     GraphResult,
     RankedPassage,
@@ -125,6 +126,52 @@ class ExtractiveReader:
 
 
 class ConfidenceScorer:
+    @staticmethod
+    def _build_evidence_chain(
+        candidates: list[AnswerCandidate],
+        graph_facts_used: list[str],
+        best_span: str,
+    ) -> list[EvidenceItem]:
+        evidence_chain: list[EvidenceItem] = []
+
+        for candidate in candidates[:3]:
+            sentences = candidate.passage.split(". ") if candidate.passage else [""]
+            sentence = next(
+                (part for part in sentences if candidate.span.lower() in part.lower()),
+                sentences[0],
+            )
+            span_start = sentence.find(candidate.span)
+            if span_start < 0:
+                span_start = sentence.lower().find(candidate.span.lower())
+            span_start = max(0, span_start)
+            span_end = span_start + len(candidate.span)
+            evidence_chain.append(
+                EvidenceItem(
+                    passage_text=candidate.passage,
+                    sentence=sentence,
+                    span=candidate.span,
+                    span_start=span_start,
+                    span_end=span_end,
+                )
+            )
+
+        for fact_string in graph_facts_used:
+            graph_property = (
+                fact_string.split(":", 1)[0] if ":" in fact_string else None
+            )
+            evidence_chain.append(
+                EvidenceItem(
+                    passage_text=fact_string,
+                    sentence=fact_string,
+                    span=best_span,
+                    span_start=0,
+                    span_end=len(best_span),
+                    graph_property=graph_property,
+                )
+            )
+
+        return evidence_chain
+
     def score(  # pylint: disable=too-many-arguments
         self,
         candidates: list[AnswerCandidate],
@@ -139,6 +186,7 @@ class ConfidenceScorer:
         enable_term_match: bool = True,
         enable_consistency: bool = True,
         enable_answer_merging: bool = True,
+        bidirectional_signal: float = 0.0,
     ) -> FinalAnswer:
 
         if not candidates:
@@ -174,6 +222,8 @@ class ConfidenceScorer:
         graph_signal = 0.2 if graph_corroborated else 0.0
 
         rank_signal = max(0.0, 1.0 - (best.rank - 1) * 0.1)
+        max_doc_frequency = max(c.doc_frequency for c in candidates)
+        frequency_signal = best.doc_frequency / max(1, max_doc_frequency)
 
         qt_bonus = (
             _question_type_bonus(best.span, question_type)
@@ -210,8 +260,15 @@ class ConfidenceScorer:
             else 0.0
         )
 
+        evidence_chain = self._build_evidence_chain(
+            candidates, graph_facts_used, best.span
+        )
+
         confidence = (
-            0.35 * extraction_conf
+            # Weights are intentionally allowed to sum slightly above 1.0 when
+            # all signals fire simultaneously; min(confidence, 1.0) clamps the
+            # final value.  Typical questions activate only a subset of signals.
+            0.30 * extraction_conf
             + 0.10 * agreement
             + 0.15 * graph_signal
             + 0.10 * rank_signal
@@ -220,6 +277,8 @@ class ConfidenceScorer:
             + 0.10 * term_match_signal
             + 0.05 * temporal_signal
             + 0.05 * geo_signal
+            + 0.05 * frequency_signal
+            + 0.05 * bidirectional_signal
         )
         confidence = round(min(confidence, 1.0), 3)
 
@@ -240,5 +299,8 @@ class ConfidenceScorer:
                 "term_match": round(term_match_signal, 3),
                 "temporal_consistency": temporal_signal,
                 "geospatial_consistency": geo_signal,
+                "frequency_signal": round(frequency_signal, 3),
+                "bidirectional_signal": round(bidirectional_signal, 3),
             },
+            evidence_chain=evidence_chain,
         )

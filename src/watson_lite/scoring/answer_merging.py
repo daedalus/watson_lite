@@ -39,6 +39,7 @@ def merge_candidates_by_qid(
                 extraction_score=max(c.extraction_score for c in group),
                 rank=best_rank,
                 graph_corroborated=any(c.graph_corroborated for c in group),
+                doc_frequency=sum(c.doc_frequency for c in group),
             )
         )
 
