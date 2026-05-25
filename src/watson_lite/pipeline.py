@@ -40,9 +40,10 @@ def _passage_dedup_key(passage: Passage) -> str:
 
 
 class WatsonLite:
-    def __init__(self, config: FeatureConfig | None = None) -> None:
-        logger.info("WatsonLite — Initializing pipeline")
+    def __init__(self, config: FeatureConfig | None = None, device: int = -1) -> None:
+        logger.info("WatsonLite — Initializing pipeline (device=%d)", device)
         self.config = config or FeatureConfig.baseline()
+        self.device = device
         self.bm25 = BM25Retriever()
         self.nlp: NLPProcessor | None = None
         self.vector: VectorRetriever | None = None
@@ -86,7 +87,7 @@ class WatsonLite:
 
     def _get_reader(self) -> ExtractiveReader:
         if self.reader is None:
-            self.reader = ExtractiveReader()
+            self.reader = ExtractiveReader(device=self.device)
         return self.reader
 
     def _retrieve_parallel(  # pylint: disable=too-many-arguments

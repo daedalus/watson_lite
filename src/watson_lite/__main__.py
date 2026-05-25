@@ -136,6 +136,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-recall-drop", type=float, default=0.02)
     parser.add_argument("--metric-tolerance", type=float, default=0.001)
     parser.add_argument("--max-latency-p95-s", type=float)
+
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=-1,
+        help="Torch device index for model inference (-1 = CPU, 0+ = GPU)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print detailed step-by-step pipeline logs",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG-level logging",
+    )
+    parser.add_argument("--logfile", type=str, help="Write logs to this file")
     return parser
 
 
@@ -218,9 +236,21 @@ def _emit_answer(
 
 
 def main() -> int:
-    logging.basicConfig(format="%(message)s", level=logging.INFO)
     parser = _build_parser()
     args = parser.parse_args(sys.argv[1:])
+
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    if args.logfile:
+        logging.basicConfig(
+            filename=args.logfile,
+            filemode="a",
+            format="%(message)s",
+            level=log_level,
+        )
+    else:
+        logging.basicConfig(format="%(message)s", level=log_level)
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     config = _build_config(args)
 
@@ -255,11 +285,11 @@ def main() -> int:
         )
         return 1 if regressions else 0
 
-    watson = WatsonLite(config=config)
+    watson = WatsonLite(config=config, device=args.device)
 
     if args.question:
         question = " ".join(args.question)
-        answer = watson.answer(question, verbose=False)
+        answer = watson.answer(question, verbose=args.verbose)
         _emit_answer(
             answer,
             output_format=args.output,
@@ -289,7 +319,7 @@ Type 'quit' or Ctrl+C to exit.
             print("Goodbye.")
             break
 
-        answer = watson.answer(question, verbose=False)
+        answer = watson.answer(question, verbose=args.verbose)
         _emit_answer(
             answer,
             output_format=args.output,

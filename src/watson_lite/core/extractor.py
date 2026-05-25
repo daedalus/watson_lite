@@ -53,18 +53,18 @@ def _question_type_bonus(span: str, question_type: str) -> float:
 
 
 class ExtractiveReader:
-    def __init__(self, model_name: str = EXTRACTIVE_MODEL) -> None:
+    def __init__(self, model_name: str = EXTRACTIVE_MODEL, device: int = -1) -> None:
         if hf_pipeline is None:
             raise ImportError(
                 "Extractive reading requires transformers (and torch). "
                 "Install watson-lite with the 'reader' or 'full' extra."
             ) from _TRANSFORMERS_IMPORT_ERROR
-        logger.debug("Loading extractive QA model: %s", model_name)
+        logger.debug("Loading extractive QA model: %s (device=%d)", model_name, device)
         self.qa: Pipeline = hf_pipeline(
             "question-answering",
             model=model_name,
             tokenizer=model_name,
-            device=-1,
+            device=device,
         )
 
     @overload
