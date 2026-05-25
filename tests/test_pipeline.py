@@ -114,13 +114,18 @@ class TestWatsonLite:
         self.fetch_patcher.stop()
 
     def test_constructor_initializes_all_components(self) -> None:
-        self.mock_nlp_cls.assert_called_once()
         self.mock_bm25_cls.assert_called_once()
-        self.mock_vector_cls.assert_called_once()
-        self.mock_graph_cls.assert_called_once()
-        self.mock_ranker_cls.assert_called_once()
-        self.mock_reader_cls.assert_called_once()
         self.mock_scorer_cls.assert_called_once()
+        self.mock_nlp_cls.assert_not_called()
+        self.mock_vector_cls.assert_not_called()
+        self.mock_graph_cls.assert_not_called()
+        self.mock_ranker_cls.assert_not_called()
+        self.mock_reader_cls.assert_not_called()
+        assert self.pipeline.nlp is None
+        assert self.pipeline.vector is None
+        assert self.pipeline.graph is None
+        assert self.pipeline.ranker is None
+        assert self.pipeline.reader is None
         assert self.pipeline._last_passage_hash is None
 
     def test_empty_question_raises(self) -> None:

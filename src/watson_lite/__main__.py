@@ -1,10 +1,14 @@
 import argparse
+import json
 import logging
 import sys
+from dataclasses import asdict, replace
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 
+from watson_lite.core.cache import get_cache
 from watson_lite.core.config import FeatureConfig
+from watson_lite.core.models import FinalAnswer
 from watson_lite.evaluation.benchmark_runner import (
     RegressionThresholds,
     run_benchmark_profiles,
@@ -30,59 +34,81 @@ def _parse_datasets(value: str) -> tuple[str, ...]:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="watson-lite")
     parser.add_argument("question", nargs="*", help="Single question to answer")
+    parser.add_argument(
+        "--profile",
+        choices=("baseline", "minimal"),
+        default="baseline",
+        help="Starting runtime profile before applying explicit feature flags",
+    )
+    parser.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Render answers as human-readable text or structured JSON",
+    )
+    parser.add_argument(
+        "--show-diagnostics",
+        action="store_true",
+        help="Include diagnostics in text output",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the local cache before answering or benchmarking",
+    )
 
     parser.add_argument(
         "--vector-retrieval",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable vector retrieval",
     )
     parser.add_argument(
         "--query-expansion",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable query expansion variants",
     )
     parser.add_argument(
         "--graph-enrichment",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable Wikidata graph enrichment",
     )
     parser.add_argument(
         "--cross-encoder-reranking",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable cross-encoder reranking",
     )
     parser.add_argument(
         "--question-type-bonus",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable question-type confidence bonus",
     )
     parser.add_argument(
         "--type-coercion",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable type coercion signal",
     )
     parser.add_argument(
         "--term-match",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable IDF-weighted term match signal",
     )
     parser.add_argument(
         "--consistency",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable temporal/geospatial consistency checks",
     )
     parser.add_argument(
         "--answer-merging",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Enable/disable merging equivalent answers via Wikidata QID",
     )
 
@@ -114,22 +140,81 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _build_config(args: argparse.Namespace) -> FeatureConfig:
-    return FeatureConfig(
-        vector_retrieval=args.vector_retrieval,
-        query_expansion=args.query_expansion,
-        graph_enrichment=args.graph_enrichment,
-        cross_encoder_reranking=args.cross_encoder_reranking,
-        question_type_bonus=args.question_type_bonus,
-        type_coercion=args.type_coercion,
-        term_match=args.term_match,
-        consistency=args.consistency,
-        answer_merging=args.answer_merging,
-        dataset_sources=args.datasets,
-        wikipedia_top_k_per_query=args.wiki_top_k,
-        retrieval_top_k=args.retrieval_top_k,
-        rerank_top_k=args.rerank_top_k,
-        extraction_top_k=args.extract_top_k,
+    base = (
+        FeatureConfig.baseline()
+        if args.profile == "baseline"
+        else FeatureConfig.minimal()
     )
+    overrides = {
+        "dataset_sources": args.datasets,
+        "wikipedia_top_k_per_query": args.wiki_top_k,
+        "retrieval_top_k": args.retrieval_top_k,
+        "rerank_top_k": args.rerank_top_k,
+        "extraction_top_k": args.extract_top_k,
+    }
+    for name in (
+        "vector_retrieval",
+        "query_expansion",
+        "graph_enrichment",
+        "cross_encoder_reranking",
+        "question_type_bonus",
+        "type_coercion",
+        "term_match",
+        "consistency",
+        "answer_merging",
+    ):
+        value = getattr(args, name)
+        if value is not None:
+            overrides[name] = value
+    return replace(base, **overrides)
+
+
+def _print_text_answer(answer: FinalAnswer, *, show_diagnostics: bool) -> None:
+    print("=" * 50)
+    print(f"  ANSWER:     {answer.answer}")
+    print(f"  CONFIDENCE: {answer.confidence * 100:.1f}%")
+    print(f"  SOURCE:     {answer.source}")
+    print(f"  URL:        {answer.url}")
+    if answer.graph_facts:
+        print("  GRAPH CORROBORATION:")
+        for fact in answer.graph_facts[:3]:
+            print(f"    · {fact}")
+    print("  Confidence breakdown:")
+    for key, value in answer.confidence_breakdown.items():
+        print(f"    {key}: {value}")
+    if show_diagnostics and answer.diagnostics is not None:
+        diagnostics = answer.diagnostics
+        print("  Diagnostics:")
+        print(
+            "    passages:"
+            f" fetched={diagnostics.passages_fetched}"
+            f" reranked={diagnostics.passages_reranked}"
+            f" extracted={diagnostics.passages_extracted}"
+        )
+        print(
+            "    cache:"
+            f" hits={diagnostics.cache_hits}"
+            f" misses={diagnostics.cache_misses}"
+        )
+        if diagnostics.stage_latencies_s:
+            timings = ", ".join(
+                f"{stage}={latency:.3f}s"
+                for stage, latency in diagnostics.stage_latencies_s.items()
+            )
+            print(f"    timings: {timings}")
+    print("=" * 50)
+
+
+def _emit_answer(
+    answer: FinalAnswer,
+    *,
+    output_format: str,
+    show_diagnostics: bool,
+) -> None:
+    if output_format == "json":
+        print(json.dumps(asdict(answer), indent=2, sort_keys=True))
+        return
+    _print_text_answer(answer, show_diagnostics=show_diagnostics)
 
 
 def main() -> int:
@@ -138,6 +223,10 @@ def main() -> int:
     args = parser.parse_args(sys.argv[1:])
 
     config = _build_config(args)
+
+    if args.clear_cache:
+        get_cache().clear()
+        logging.info("Cleared local cache")
 
     if args.benchmark_dataset:
         thresholds = RegressionThresholds(
@@ -170,7 +259,12 @@ def main() -> int:
 
     if args.question:
         question = " ".join(args.question)
-        watson.answer(question, verbose=True)
+        answer = watson.answer(question, verbose=False)
+        _emit_answer(
+            answer,
+            output_format=args.output,
+            show_diagnostics=args.show_diagnostics,
+        )
         return 0
 
     print(f"""
@@ -195,7 +289,12 @@ Type 'quit' or Ctrl+C to exit.
             print("Goodbye.")
             break
 
-        watson.answer(question, verbose=True)
+        answer = watson.answer(question, verbose=False)
+        _emit_answer(
+            answer,
+            output_format=args.output,
+            show_diagnostics=args.show_diagnostics,
+        )
 
     return 0
 

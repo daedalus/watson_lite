@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -74,3 +77,23 @@ jobs:
 
       - name: Check package
         run: pip install twine && python -m twine check dist/*
+
+  benchmark-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[test]"
+
+      - name: Run benchmark smoke tests
+        run: pytest tests/test_benchmark_dataset.py tests/test_benchmark_runner.py -k benchmark

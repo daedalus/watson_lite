@@ -1,9 +1,20 @@
 import logging
-
-import spacy
-from spacy.tokens import Doc
+from typing import TYPE_CHECKING, Any
 
 from watson_lite.core.models import ParsedQuestion
+
+try:
+    import spacy
+except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
+    spacy = None
+    _SPACY_IMPORT_ERROR: ImportError | None = exc
+else:
+    _SPACY_IMPORT_ERROR = None
+
+if TYPE_CHECKING:
+    from spacy.tokens import Doc
+else:  # pragma: no cover - runtime fallback used when type checking is inactive
+    Doc = Any
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +128,11 @@ def _extract_lat(text: str, question_type: str) -> tuple[str | None, list[str]]:
 
 class NLPProcessor:
     def __init__(self, model: str = "en_core_web_sm") -> None:
+        if spacy is None:
+            raise ImportError(
+                "spaCy is required for NLP processing. "
+                "Install watson-lite with the 'nlp' or 'full' extra."
+            ) from _SPACY_IMPORT_ERROR
         logger.debug("Loading spaCy model: %s", model)
         self.nlp = spacy.load(model)
 

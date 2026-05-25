@@ -18,7 +18,7 @@ off-the-shelf pretrained models running CPU-only inference.
 ## Development
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[test,lint,full]"
 pytest
 ruff format src/ tests/
 prospector --with-tool ruff --with-tool mypy src/

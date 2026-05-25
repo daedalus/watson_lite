@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -24,6 +25,7 @@ from watson_lite.retrieval.query_formulation import generate_search_queries
 from watson_lite.retrieval.vector_retriever import VectorRetriever
 
 logger = logging.getLogger(__name__)
+_NON_WORD = re.compile(r"\W+")
 
 
 def _passages_hash(passages: list[Passage]) -> str:
@@ -32,13 +34,18 @@ def _passages_hash(passages: list[Passage]) -> str:
     return hashlib.sha256(parts.encode()).hexdigest()
 
 
+def _passage_dedup_key(passage: Passage) -> str:
+    normalized = _NON_WORD.sub(" ", passage.text.lower())
+    return " ".join(normalized.split())
+
+
 class WatsonLite:
     def __init__(self, config: FeatureConfig | None = None) -> None:
         logger.info("WatsonLite — Initializing pipeline")
         self.config = config or FeatureConfig.baseline()
-        self.nlp = NLPProcessor()
         self.bm25 = BM25Retriever()
-        self.vector = VectorRetriever()
+        self.nlp: NLPProcessor | None = None
+        self.vector: VectorRetriever | None = None
         self.dataset_query_engine = DatasetQueryEngine(
             providers=(
                 DatasetProvider("wikipedia", fetch_wikipedia_passages),
@@ -46,12 +53,41 @@ class WatsonLite:
             ),
             enabled_datasets=self.config.dataset_sources,
         )
-        self.graph = WikidataGraph()
-        self.ranker = Ranker()
-        self.reader = ExtractiveReader()
+        self.graph: WikidataGraph | None = None
+        self.ranker: Ranker | None = None
+        self.reader: ExtractiveReader | None = None
         self.scorer = ConfidenceScorer()
         self._last_passage_hash: str | None = None
-        logger.info("All components loaded. Ready.")
+        logger.info("Core components loaded. Heavy models will load lazily.")
+
+    def _get_nlp(self) -> NLPProcessor:
+        if self.nlp is None:
+            self.nlp = NLPProcessor()
+        return self.nlp
+
+    def _get_vector(self) -> VectorRetriever | None:
+        if not self.config.vector_retrieval:
+            return None
+        if self.vector is None:
+            self.vector = VectorRetriever()
+        return self.vector
+
+    def _get_graph(self) -> WikidataGraph:
+        if self.graph is None:
+            self.graph = WikidataGraph()
+        return self.graph
+
+    def _get_ranker(self) -> Ranker:
+        if self.ranker is None:
+            self.ranker = Ranker(
+                enable_cross_encoder=self.config.cross_encoder_reranking
+            )
+        return self.ranker
+
+    def _get_reader(self) -> ExtractiveReader:
+        if self.reader is None:
+            self.reader = ExtractiveReader()
+        return self.reader
 
     def _retrieve_parallel(  # pylint: disable=too-many-arguments
         self,
@@ -59,6 +95,7 @@ class WatsonLite:
         passages: list[Passage],
         needs_reindex: bool,
         *,
+        vector_retriever: VectorRetriever | None,
         vector_enabled: bool,
         top_k: int,
     ) -> tuple[list[Passage], list[Passage]]:
@@ -69,13 +106,13 @@ class WatsonLite:
                 self.bm25.index(passages)
             return self.bm25.retrieve(question, top_k=top_k)
 
-        if not vector_enabled:
+        if not vector_enabled or vector_retriever is None:
             return _bm25_work(), []
 
         def _vector_work() -> list[Passage]:
             if needs_reindex:
-                self.vector.index_passages(passages)
-            return self.vector.retrieve(question, top_k=top_k)
+                vector_retriever.index_passages(passages)
+            return vector_retriever.retrieve(question, top_k=top_k)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             bm25_future = executor.submit(_bm25_work)
@@ -145,7 +182,7 @@ class WatsonLite:
 
         self._log_step(verbose, 1, "NLP preprocessing...")
         stage_t0 = time.perf_counter()
-        parsed = self.nlp.process(question)
+        parsed = self._get_nlp().process(question)
         stage_latencies["nlp"] = round(time.perf_counter() - stage_t0, 4)
         self._log_detail(verbose, "Type: %s", parsed.question_type)
         self._log_detail(verbose, "Entities: %s", [e["text"] for e in parsed.entities])
@@ -166,8 +203,9 @@ class WatsonLite:
             for p in self.dataset_query_engine.query(
                 q, top_k=self.config.wikipedia_top_k_per_query
             ):
-                if p.text not in seen_texts:
-                    seen_texts.add(p.text)
+                dedup_key = _passage_dedup_key(p)
+                if dedup_key not in seen_texts:
+                    seen_texts.add(dedup_key)
                     all_passages.append(p)
 
         passages = all_passages
@@ -209,6 +247,7 @@ class WatsonLite:
             question,
             passages,
             needs_reindex,
+            vector_retriever=self._get_vector(),
             vector_enabled=self.config.vector_retrieval,
             top_k=self.config.retrieval_top_k,
         )
@@ -221,7 +260,7 @@ class WatsonLite:
         stage_t0 = time.perf_counter()
         entity_names = [str(e["text"]) for e in parsed.entities]
         graph_results = (
-            self.graph.enrich_all(entity_names)
+            self._get_graph().enrich_all(entity_names)
             if entity_names and self.config.graph_enrichment
             else []
         )
@@ -231,7 +270,7 @@ class WatsonLite:
 
         self._log_step(verbose, 4, "Ranking (RRF + cross-encoder)...")
         stage_t0 = time.perf_counter()
-        ranked = self.ranker.rank(
+        ranked = self._get_ranker().rank(
             question,
             bm25_results,
             vector_results,
@@ -247,7 +286,7 @@ class WatsonLite:
         all_candidates = []
         extraction_errors = 0
         for sub_q in parsed.sub_questions:
-            extraction_result = self.reader.extract(
+            extraction_result = self._get_reader().extract(
                 sub_q,
                 ranked,
                 top_k=self.config.extraction_top_k,
@@ -321,5 +360,25 @@ class WatsonLite:
         logger.info("  Confidence breakdown:")
         for k, v in answer.confidence_breakdown.items():
             logger.info("    %s: %s", k, v)
+        if answer.diagnostics is not None:
+            diagnostics = answer.diagnostics
+            logger.info("  Diagnostics:")
+            logger.info(
+                "    passages: fetched=%d reranked=%d extracted=%d",
+                diagnostics.passages_fetched,
+                diagnostics.passages_reranked,
+                diagnostics.passages_extracted,
+            )
+            logger.info(
+                "    cache: hits=%d misses=%d",
+                diagnostics.cache_hits,
+                diagnostics.cache_misses,
+            )
+            if diagnostics.stage_latencies_s:
+                formatted = ", ".join(
+                    f"{stage}={latency:.3f}s"
+                    for stage, latency in diagnostics.stage_latencies_s.items()
+                )
+                logger.info("    timings: %s", formatted)
         logger.info("  Time: %.2fs", elapsed)
         logger.info("=" * 50)

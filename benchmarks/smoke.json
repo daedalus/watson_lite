@@ -1,0 +1,17 @@
+[
+  {
+    "question": "Who designed the Eiffel Tower?",
+    "answers": ["Gustave Eiffel"],
+    "evidence_passages": ["designed by Gustave Eiffel"]
+  },
+  {
+    "question": "What is the capital of France?",
+    "answers": ["Paris", "Paris, France"],
+    "evidence_passages": ["capital city of France"]
+  },
+  {
+    "question": "When did the Apollo 11 mission land on the Moon?",
+    "answers": ["1969", "July 20, 1969"],
+    "evidence_passages": ["landed on the Moon in 1969"]
+  }
+]

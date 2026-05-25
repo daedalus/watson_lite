@@ -4,7 +4,15 @@ from typing import Any
 from urllib.error import HTTPError
 
 import requests
-from SPARQLWrapper import JSON, SPARQLWrapper
+
+try:
+    from SPARQLWrapper import JSON, SPARQLWrapper
+except ImportError as exc:  # pragma: no cover - exercised via lazy init tests
+    JSON = None
+    SPARQLWrapper = None
+    _SPARQL_IMPORT_ERROR: ImportError | None = exc
+else:
+    _SPARQL_IMPORT_ERROR = None
 
 from watson_lite.core.cache import get_cache, is_cache_miss
 from watson_lite.core.models import EntityFact, GraphResult
@@ -14,6 +22,10 @@ logger = logging.getLogger(__name__)
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
 _NEGATIVE_CACHE_TTL_SECONDS = 300
+_REQUEST_TIMEOUT_SECONDS = 15
+_REQUEST_MAX_ATTEMPTS = 3
+_REQUEST_BACKOFF_SECONDS = 1.0
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 # Static mapping of the most frequently encountered Wikidata property IDs to
 # their English labels.  Unknown PIDs fall back to the raw ID string.
@@ -63,17 +75,106 @@ _PROPERTY_LABELS: dict[str, str] = {
 }
 
 
+def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
+    retry_after: str | None = None
+    headers = getattr(response, "headers", None)
+    if headers is not None and hasattr(headers, "get"):
+        retry_after_value = headers.get("Retry-After")
+        if retry_after_value is not None:
+            retry_after = str(retry_after_value)
+    if retry_after:
+        try:
+            return float(max(float(retry_after), 0.0))
+        except ValueError:
+            logger.debug("Ignoring invalid Retry-After header: %s", retry_after)
+    return float(_REQUEST_BACKOFF_SECONDS * (2**attempt))
+
+
+def _request_json(
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    context: str,
+) -> dict[str, Any] | None:
+    headers = {"User-Agent": USER_AGENT}
+    for attempt in range(_REQUEST_MAX_ATTEMPTS):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
+            )
+        except Exception as err:  # pragma: no cover - defensive network isolation
+            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
+                logger.warning("%s failed: %s", context, err)
+                return None
+            wait = _REQUEST_BACKOFF_SECONDS * (2**attempt)
+            logger.warning("%s failed, retrying in %.1fs: %s", context, wait, err)
+            time.sleep(wait)
+            continue
+
+        status = int(getattr(response, "status_code", 200))
+        if status in _RETRYABLE_STATUS_CODES:
+            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
+                logger.warning("%s failed: HTTP %s", context, status)
+                return None
+            wait = _retry_delay_seconds(response, attempt)
+            logger.warning(
+                "%s transient failure/rate limit: HTTP %s; retrying in %.1fs",
+                context,
+                status,
+                wait,
+            )
+            time.sleep(wait)
+            continue
+
+        if status >= 400:
+            logger.warning("%s failed: HTTP %s", context, status)
+            return None
+
+        try:
+            payload = response.json()
+        except Exception as err:  # pragma: no cover - defensive parsing guard
+            logger.warning("%s parse failed: %s", context, err)
+            return None
+        if not isinstance(payload, dict):
+            logger.warning("%s returned non-object JSON", context)
+            return None
+        return payload
+    return None
+
+
 class WikidataGraph:
     def __init__(self) -> None:
-        self.sparql = SPARQLWrapper(WIKIDATA_ENDPOINT)
-        self.sparql.addCustomHttpHeader("User-Agent", USER_AGENT)
-        self.sparql.setReturnFormat(JSON)
+        self.sparql = None
+
+    def _ensure_sparql(self) -> Any:  # noqa: ANN401
+        if self.sparql is not None:
+            return self.sparql
+        sparql_cls = SPARQLWrapper
+        json_format = JSON
+        if sparql_cls is None or json_format is None:
+            raise ImportError(
+                "SPARQL fallback requires SPARQLWrapper. "
+                "Install watson-lite with the 'graph' or 'full' extra."
+            ) from _SPARQL_IMPORT_ERROR
+        sparql = sparql_cls(WIKIDATA_ENDPOINT)
+        sparql.addCustomHttpHeader("User-Agent", USER_AGENT)
+        sparql.setReturnFormat(json_format)
+        self.sparql = sparql
+        return sparql
 
     def _run_query(self, query: str, retries: int = 3) -> list[dict[str, object]]:
+        try:
+            sparql = self._ensure_sparql()
+        except ImportError as err:
+            logger.warning("SPARQL fallback unavailable: %s", err)
+            return []
         for attempt in range(retries):
             try:
-                self.sparql.setQuery(query)
-                data: Any = self.sparql.query().convert()
+                sparql.setQuery(query)
+                data: Any = sparql.query().convert()
                 return list(data["results"]["bindings"])
             except HTTPError as e:
                 if e.code == 429 and attempt < retries - 1:
@@ -109,27 +210,23 @@ class WikidataGraph:
             "language": "en",
             "format": "json",
         }
-        try:
-            resp = requests.get(
-                url, params=params, headers={"User-Agent": USER_AGENT}, timeout=10
-            )
-            if resp.status_code == 429:
-                logger.warning("Rate limited on entity search, falling back to SPARQL")
-                qid = self._find_entity_id_sparql(entity_name)
-                if qid:
-                    cache.set(cache_key, qid)
-                else:
-                    cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-                return qid
-            data = resp.json()
-            if data.get("search"):
-                qid = str(data["search"][0]["id"])
+        data = _request_json(url, params=params, context="Wikidata entity search")
+        if data is None:
+            logger.warning("Falling back to SPARQL entity search for '%s'", entity_name)
+            qid = self._find_entity_id_sparql(entity_name)
+            if qid:
                 cache.set(cache_key, qid)
-                return qid
+            else:
+                cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+            return qid
+        if data.get("search"):
+            qid = str(data["search"][0]["id"])
+            cache.set(cache_key, qid)
+            return qid
+        try:
             cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - defensive cache write guard
             logger.warning("Entity search error: %s", e)
-            cache.set(cache_key, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return None
 
     def _find_entity_id_sparql(self, entity_name: str) -> str | None:
@@ -165,22 +262,15 @@ class WikidataGraph:
             "languages": "en",
             "format": "json",
         }
-        try:
-            resp = requests.get(
-                url, params=params, headers={"User-Agent": USER_AGENT}, timeout=15
-            )
-            if resp.status_code != 200:
-                return {}
-            data = resp.json()
-            entities = data.get("entities", {})
-            return {
-                eid: info["labels"]["en"]["value"]
-                for eid, info in entities.items()
-                if "labels" in info and "en" in info["labels"]
-            }
-        except Exception:
-            logger.warning("Failed to resolve QID labels", exc_info=True)
+        data = _request_json(url, params=params, context="Wikidata label lookup")
+        if data is None:
             return {}
+        entities = data.get("entities", {})
+        return {
+            eid: info["labels"]["en"]["value"]
+            for eid, info in entities.items()
+            if "labels" in info and "en" in info["labels"]
+        }
 
     def _parse_claims_to_facts(
         self, qid: str, claims: dict[str, Any], max_facts: int
@@ -223,28 +313,24 @@ class WikidataGraph:
             return [EntityFact(**f) for f in cached]
 
         url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
-        try:
-            resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
-            if resp.status_code != 200:
-                logger.warning("EntityData request failed: HTTP %s", resp.status_code)
-                cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-                return []
-            data = resp.json()
-            entity = data.get("entities", {}).get(qid, {})
-            facts, qid_values = self._parse_claims_to_facts(
-                qid, entity.get("claims", {}), max_facts
-            )
-            if qid_values:
-                labels = self._resolve_qid_labels(qid_values)
-                for f in facts:
-                    if f.value in labels:
-                        f.value = labels[f.value]
-            cache.set(cache_key, [f.__dict__ for f in facts])
-            return facts
-        except Exception as e:
-            logger.warning("EntityData error: %s", e)
+        data = _request_json(
+            url,
+            context=f"Wikidata entity facts lookup for '{qid}'",
+        )
+        if data is None:
             cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
             return []
+        entity = data.get("entities", {}).get(qid, {})
+        facts, qid_values = self._parse_claims_to_facts(
+            qid, entity.get("claims", {}), max_facts
+        )
+        if qid_values:
+            labels = self._resolve_qid_labels(qid_values)
+            for f in facts:
+                if f.value in labels:
+                    f.value = labels[f.value]
+        cache.set(cache_key, [f.__dict__ for f in facts])
+        return facts
 
     def get_related_entities(self, qid: str, max_related: int = 10) -> list[str]:
         """Return Wikidata entity IDs referenced in the entity's own claims.

@@ -9,9 +9,18 @@ A Watson-inspired extractive QA system that runs on a laptop.
 ## Install
 
 ```bash
-pip install watson-lite
+pip install "watson-lite[full]"
 python -m spacy download en_core_web_sm
 ```
+
+Optional extras:
+
+- `watson-lite[nlp]` — spaCy question processing
+- `watson-lite[vector]` — dense retrieval dependencies
+- `watson-lite[rerank]` — cross-encoder reranking
+- `watson-lite[reader]` — extractive QA reader
+- `watson-lite[graph]` — SPARQL fallback support
+- `watson-lite[full]` — all runtime features
 
 ## Usage
 
@@ -24,6 +33,12 @@ watson-lite "Who was the 44th president of the United States?"
 
 # Interactive mode
 watson-lite
+
+# Minimal profile + JSON output
+watson-lite --profile minimal --output json "Who designed the Eiffel Tower?"
+
+# Clear cache before running
+watson-lite --clear-cache "Who designed the Eiffel Tower?"
 
 # Toggle optional features (ablation-style)
 watson-lite --no-vector-retrieval --no-graph-enrichment "Who designed the Eiffel Tower?"
@@ -157,7 +172,7 @@ Optional toggles (default enabled):
 ```bash
 git clone https://github.com/daedalus/watson-lite.git
 cd watson_lite
-pip install -e ".[test]"
+pip install -e ".[test,lint,full]"
 
 # run tests
 pytest
@@ -171,6 +186,8 @@ prospector --with-tool ruff --with-tool mypy src/
 # find unused code
 vulture --min-confidence 90 src/
 ```
+
+Checked-in benchmark smoke dataset: `benchmarks/smoke.json`
 
 ## Architecture
 

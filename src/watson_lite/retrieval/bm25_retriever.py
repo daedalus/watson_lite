@@ -1,5 +1,7 @@
 import copy
 import logging
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -14,11 +16,151 @@ logger = logging.getLogger(__name__)
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
-CHUNK_SIZE = 200
+# Keep chunks comfortably below the reader's context budget while leaving room
+# for sentence overlap, which reduces edge-truncation during extraction.
+CHUNK_SIZE = 180
+CHUNK_OVERLAP_SENTENCES = 1
+MIN_CHUNK_WORDS = 20
+FALLBACK_CHUNK_STEP = CHUNK_SIZE // 2
 _NEGATIVE_CACHE_TTL_SECONDS = 300
+_REQUEST_TIMEOUT_SECONDS = 10
+_REQUEST_MAX_ATTEMPTS = 3
+_REQUEST_BACKOFF_SECONDS = 1.0
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 WIKI_HEADERS = {
     "User-Agent": "WatsonLite/1.0 (educational project; clavijodario@gmail.com)"
 }
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_NON_WORD_RE = re.compile(r"\W+")
+
+
+def _normalize_passage_text(text: str) -> str:
+    return " ".join(_NON_WORD_RE.sub(" ", text.lower()).split())
+
+
+def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
+    retry_after: str | None = None
+    headers = getattr(response, "headers", None)
+    if headers is not None and hasattr(headers, "get"):
+        retry_after_value = headers.get("Retry-After")
+        if retry_after_value is not None:
+            retry_after = str(retry_after_value)
+    if retry_after:
+        try:
+            return float(max(float(retry_after), 0.0))
+        except ValueError:
+            logger.debug("Ignoring invalid Retry-After header: %s", retry_after)
+    return float(_REQUEST_BACKOFF_SECONDS * (2**attempt))
+
+
+def _request_json(
+    url: str,
+    *,
+    params: dict[str, Any],
+    cache_namespace: str,
+    context: str,
+) -> dict[str, Any] | None:
+    for attempt in range(_REQUEST_MAX_ATTEMPTS):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=WIKI_HEADERS,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
+            )
+        except Exception as err:  # pragma: no cover - defensive network isolation
+            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
+                logger.warning("%s request failed (%s): %s", context, cache_namespace, err)
+                return None
+            wait = _REQUEST_BACKOFF_SECONDS * (2**attempt)
+            logger.warning(
+                "%s request failed (%s), retrying in %.1fs: %s",
+                context,
+                cache_namespace,
+                wait,
+                err,
+            )
+            time.sleep(wait)
+            continue
+
+        status = int(getattr(response, "status_code", 200))
+        if status in _RETRYABLE_STATUS_CODES:
+            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
+                logger.warning(
+                    "%s request failed (%s): HTTP %s",
+                    context,
+                    cache_namespace,
+                    status,
+                )
+                return None
+            wait = _retry_delay_seconds(response, attempt)
+            logger.warning(
+                "%s request rate-limited/transient failure (%s): HTTP %s; retrying in %.1fs",
+                context,
+                cache_namespace,
+                status,
+                wait,
+            )
+            time.sleep(wait)
+            continue
+
+        if status >= 400:
+            logger.warning("%s request failed (%s): HTTP %s", context, cache_namespace, status)
+            return None
+
+        try:
+            payload = response.json()
+        except Exception as err:  # pragma: no cover - defensive parsing guard
+            logger.warning("%s response parse failed (%s): %s", context, cache_namespace, err)
+            return None
+
+        if not isinstance(payload, dict):
+            logger.warning("%s response was not a JSON object (%s)", context, cache_namespace)
+            return None
+        return payload
+
+    return None
+
+
+def _chunk_text(text: str) -> list[str]:
+    sentences = [sentence.strip() for sentence in _SENTENCE_SPLIT_RE.split(text) if sentence.strip()]
+    if not sentences:
+        return []
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_words = 0
+
+    for sentence in sentences:
+        sentence_words = sentence.split()
+        if not sentence_words:
+            continue
+        if current and current_words + len(sentence_words) > CHUNK_SIZE:
+            chunk = " ".join(current).strip()
+            if len(chunk.split()) >= MIN_CHUNK_WORDS:
+                chunks.append(chunk)
+            current = current[-CHUNK_OVERLAP_SENTENCES:]
+            current_words = sum(len(item.split()) for item in current)
+        current.append(sentence)
+        current_words += len(sentence_words)
+
+    if current:
+        chunk = " ".join(current).strip()
+        if len(chunk.split()) >= MIN_CHUNK_WORDS:
+            chunks.append(chunk)
+
+    if chunks:
+        return chunks
+
+    words = text.split()
+    fallback_chunks = []
+    # Keep overlap in the fallback path so extraction still sees context that
+    # straddles a hard word-count boundary when sentence splitting is unavailable.
+    for i in range(0, len(words), FALLBACK_CHUNK_STEP):
+        chunk = " ".join(words[i : i + CHUNK_SIZE]).strip()
+        if len(chunk.split()) >= MIN_CHUNK_WORDS:
+            fallback_chunks.append(chunk)
+    return fallback_chunks
 
 
 def fetch_mediawiki_passages(
@@ -31,7 +173,8 @@ def fetch_mediawiki_passages(
 ) -> list[Passage]:
     """Fetch and chunk passages from a MediaWiki API-backed dataset."""
     cache = get_cache()
-    cache_key = f"{cache_namespace}:passages:{query.lower().strip()}"
+    normalized_query = query.lower().strip()
+    cache_key = f"{cache_namespace}:passages:{normalized_query}:top_k={top_k}"
     cached = cache.get_or_sentinel(cache_key)
     if not is_cache_miss(cached):
         logger.debug("Cache hit: %s", cache_key)
@@ -45,15 +188,16 @@ def fetch_mediawiki_passages(
         "format": "json",
         "utf8": 1,
     }
-    try:
-        resp = requests.get(
-            api_url, params=search_params, headers=WIKI_HEADERS, timeout=10
-        )
-        results = resp.json().get("query", {}).get("search", [])
-    except Exception as e:
-        logger.warning("Dataset search error (%s): %s", cache_namespace, e)
+    payload = _request_json(
+        api_url,
+        params=search_params,
+        cache_namespace=cache_namespace,
+        context="Dataset search",
+    )
+    if payload is None:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
+    results = payload.get("query", {}).get("search", [])
 
     def _fetch_article(title: str) -> list[Passage]:
         extract_params: dict[str, Any] = {
@@ -63,32 +207,35 @@ def fetch_mediawiki_passages(
             "explaintext": True,
             "format": "json",
         }
-        try:
-            eresp = requests.get(
-                api_url, params=extract_params, headers=WIKI_HEADERS, timeout=10
-            )
-            pages = eresp.json().get("query", {}).get("pages", {})
-            chunks: list[Passage] = []
-            for page in pages.values():
-                text = page.get("extract", "")
-                if not text:
-                    continue
-                words = text.split()
-                for i in range(0, len(words), CHUNK_SIZE // 2):
-                    chunk = " ".join(words[i : i + CHUNK_SIZE])
-                    if len(chunk.split()) < 20:
-                        continue
-                    chunks.append(
-                        Passage(
-                            text=chunk,
-                            source=title,
-                            url=(f"{article_base_url}/{title.replace(' ', '_')}"),
-                        )
-                    )
-            return chunks
-        except Exception as e:
-            logger.warning("Extract error for '%s': %s", title, e)
+        payload = _request_json(
+            api_url,
+            params=extract_params,
+            cache_namespace=cache_namespace,
+            context=f"Dataset extract for '{title}'",
+        )
+        if payload is None:
             return []
+        pages = payload.get("query", {}).get("pages", {})
+        chunks: list[Passage] = []
+        seen_chunks: set[str] = set()
+        article_url = f"{article_base_url}/{title.replace(' ', '_')}"
+        for page in pages.values():
+            text = page.get("extract", "")
+            if not text:
+                continue
+            for chunk in _chunk_text(text):
+                dedup_key = _normalize_passage_text(chunk)
+                if dedup_key in seen_chunks:
+                    continue
+                seen_chunks.add(dedup_key)
+                chunks.append(
+                    Passage(
+                        text=chunk,
+                        source=title,
+                        url=article_url,
+                    )
+                )
+        return chunks
 
     titles = [item["title"] for item in results]
     passages: list[Passage] = []
