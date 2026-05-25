@@ -265,9 +265,9 @@ class ConfidenceScorer:
         )
 
         confidence = (
-            # The extraction weight is reduced slightly to make room for the new
-            # frequency and bidirectional signals while keeping their overall
-            # contribution modest.
+            # Weights are intentionally allowed to sum slightly above 1.0 when
+            # all signals fire simultaneously; min(confidence, 1.0) clamps the
+            # final value.  Typical questions activate only a subset of signals.
             0.30 * extraction_conf
             + 0.10 * agreement
             + 0.15 * graph_signal
