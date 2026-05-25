@@ -169,10 +169,6 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
     return replace(base, **overrides)
 
 
-def _answer_to_payload(answer: FinalAnswer) -> dict[str, object]:
-    return asdict(answer)
-
-
 def _print_text_answer(answer: FinalAnswer, *, show_diagnostics: bool) -> None:
     print("=" * 50)
     print(f"  ANSWER:     {answer.answer}")
@@ -216,7 +212,7 @@ def _emit_answer(
     show_diagnostics: bool,
 ) -> None:
     if output_format == "json":
-        print(json.dumps(_answer_to_payload(answer), indent=2, sort_keys=True))
+        print(json.dumps(asdict(answer), indent=2, sort_keys=True))
         return
     _print_text_answer(answer, show_diagnostics=show_diagnostics)
 

@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
 WIKI_SEARCH_LIMIT = 5
+# Keep chunks comfortably below the reader's context budget while leaving room
+# for sentence overlap, which reduces edge-truncation during extraction.
 CHUNK_SIZE = 180
 CHUNK_OVERLAP_SENTENCES = 1
 MIN_CHUNK_WORDS = 20
