@@ -3,6 +3,7 @@ import logging
 import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from typing import cast
 
 from watson_lite.core.cache import CacheMetrics, get_cache_metrics_snapshot
 from watson_lite.core.config import FeatureConfig
@@ -22,11 +23,20 @@ from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
+    fetch_arxiv_passages,
+    fetch_dbpedia_passages,
     fetch_elasticsearch_passages,
     fetch_huggingface_passages,
+    fetch_oeis_passages,
+    fetch_openlibrary_passages,
+    fetch_pubmed_passages,
+    fetch_stackexchange_passages,
     fetch_wikibooks_passages,
+    fetch_wikinews_passages,
     fetch_wikipedia_page_by_title,
     fetch_wikipedia_passages,
+    fetch_wikiquote_passages,
+    fetch_wikisource_passages,
 )
 from watson_lite.retrieval.dataset_query_engine import (
     DatasetProvider,
@@ -63,6 +73,15 @@ class WatsonLite:
             providers=(
                 DatasetProvider("wikipedia", fetch_wikipedia_passages),
                 DatasetProvider("wikibooks", fetch_wikibooks_passages),
+                DatasetProvider("wikiquote", fetch_wikiquote_passages),
+                DatasetProvider("wikisource", fetch_wikisource_passages),
+                DatasetProvider("wikinews", fetch_wikinews_passages),
+                DatasetProvider("pubmed", fetch_pubmed_passages),
+                DatasetProvider("arxiv", fetch_arxiv_passages),
+                DatasetProvider("openlibrary", fetch_openlibrary_passages),
+                DatasetProvider("stackexchange", fetch_stackexchange_passages),
+                DatasetProvider("dbpedia", fetch_dbpedia_passages),
+                DatasetProvider("oeis", fetch_oeis_passages),
                 DatasetProvider(
                     "elasticsearch",
                     lambda query, *, top_k: fetch_elasticsearch_passages(
@@ -145,7 +164,10 @@ class WatsonLite:
         def _vector_work() -> list[Passage]:
             if needs_reindex:
                 vector_retriever.index_passages(passages)
-            return vector_retriever.retrieve(question, top_k=top_k)
+            return cast(
+                "list[Passage]",
+                vector_retriever.retrieve(question, top_k=top_k),
+            )
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             bm25_future = executor.submit(_bm25_work)
@@ -201,7 +223,7 @@ class WatsonLite:
 
     @staticmethod
     def _is_fallback_answer(answer: FinalAnswer) -> bool:
-        return is_fallback_answer_text(answer.answer)
+        return cast("bool", is_fallback_answer_text(answer.answer))
 
     @staticmethod
     def _dedupe_passages(passages: list[Passage]) -> list[Passage]:

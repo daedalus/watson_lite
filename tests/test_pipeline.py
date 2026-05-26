@@ -141,6 +141,24 @@ class TestWatsonLite:
         assert self.pipeline.reader is None
         assert self.pipeline._last_passage_hash is None
 
+    def test_constructor_registers_public_dataset_providers(self) -> None:
+        provider_names = set(self.pipeline.dataset_query_engine._providers.keys())
+        assert {
+            "wikipedia",
+            "wikibooks",
+            "wikiquote",
+            "wikisource",
+            "wikinews",
+            "pubmed",
+            "arxiv",
+            "openlibrary",
+            "stackexchange",
+            "dbpedia",
+            "oeis",
+            "elasticsearch",
+            "huggingface",
+        }.issubset(provider_names)
+
     def test_empty_question_raises(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
             self.pipeline.answer("")

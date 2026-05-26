@@ -1,4 +1,5 @@
 import copy
+import html
 import logging
 import os
 import re
@@ -16,6 +17,16 @@ logger = logging.getLogger(__name__)
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
+WIKIQUOTE_API = "https://en.wikiquote.org/w/api.php"
+WIKISOURCE_API = "https://en.wikisource.org/w/api.php"
+WIKINEWS_API = "https://en.wikinews.org/w/api.php"
+PUBMED_ESEARCH_API = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+PUBMED_ESUMMARY_API = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+ARXIV_API = "https://export.arxiv.org/api/query"
+OPENLIBRARY_SEARCH_API = "https://openlibrary.org/search.json"
+STACKEXCHANGE_SEARCH_API = "https://api.stackexchange.com/2.3/search/advanced"
+DBPEDIA_LOOKUP_API = "https://lookup.dbpedia.org/api/search"
+OEIS_SEARCH_API = "https://oeis.org/search"
 WIKI_SEARCH_LIMIT = 5
 ELASTICSEARCH_URL_ENV = "WATSON_LITE_ELASTICSEARCH_URL"
 ELASTICSEARCH_INDEX_ENV = "WATSON_LITE_ELASTICSEARCH_INDEX"
@@ -24,6 +35,7 @@ HUGGINGFACE_DATASET_ENV = "WATSON_LITE_HUGGINGFACE_DATASET"
 HUGGINGFACE_CONFIG_ENV = "WATSON_LITE_HUGGINGFACE_CONFIG"
 HUGGINGFACE_SPLIT_ENV = "WATSON_LITE_HUGGINGFACE_SPLIT"
 HUGGINGFACE_TOKEN_ENV = "WATSON_LITE_HUGGINGFACE_TOKEN"
+STACKEXCHANGE_SITE_ENV = "WATSON_LITE_STACKEXCHANGE_SITE"
 ELASTICSEARCH_TIMEOUT_SECONDS = 10
 HUGGINGFACE_DATASET_SERVER_SEARCH = "https://datasets-server.huggingface.co/search"
 # Keep chunks comfortably below the reader's context budget while leaving room
@@ -42,10 +54,55 @@ WIKI_HEADERS = {
 }
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _NON_WORD_RE = re.compile(r"\W+")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_UNSAFE_XML_DTD_RE = re.compile(r"<!\s*(DOCTYPE|ENTITY)\b", re.IGNORECASE)
+_ARXIV_ENTRY_RE = re.compile(r"<entry\b[^>]*>.*?</entry>", re.IGNORECASE | re.DOTALL)
 
 
 def _normalize_passage_text(text: str) -> str:
     return " ".join(_NON_WORD_RE.sub(" ", text.lower()).split())
+
+
+def _stringify(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _strip_html(text: str) -> str:
+    return " ".join(_HTML_TAG_RE.sub(" ", text).split())
+
+
+def _append_deduped_passage(
+    passages: list[Passage],
+    seen_chunks: set[str],
+    *,
+    text: str,
+    source: str,
+    url: str,
+) -> None:
+    clean_text = text.strip()
+    if not clean_text:
+        return
+    dedup_key = _normalize_passage_text(clean_text)
+    if dedup_key in seen_chunks:
+        return
+    seen_chunks.add(dedup_key)
+    passages.append(Passage(text=clean_text, source=source.strip(), url=url.strip()))
+
+
+def _extract_xml_tag_text(payload: str, tag: str) -> str:
+    match = re.search(
+        rf"<{tag}\b[^>]*>(.*?)</{tag}>",
+        payload,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return ""
+    value = _strip_html(match.group(1))
+    return html.unescape(value).strip()
 
 
 def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
@@ -364,6 +421,45 @@ def fetch_wikibooks_passages(
     )
 
 
+def fetch_wikiquote_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from Wikiquote using the generic MediaWiki fetcher."""
+    return fetch_mediawiki_passages(
+        query,
+        top_k=top_k,
+        api_url=WIKIQUOTE_API,
+        article_base_url="https://en.wikiquote.org/wiki",
+        cache_namespace="wikiquote",
+    )
+
+
+def fetch_wikisource_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from Wikisource using the generic MediaWiki fetcher."""
+    return fetch_mediawiki_passages(
+        query,
+        top_k=top_k,
+        api_url=WIKISOURCE_API,
+        article_base_url="https://en.wikisource.org/wiki",
+        cache_namespace="wikisource",
+    )
+
+
+def fetch_wikinews_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from Wikinews using the generic MediaWiki fetcher."""
+    return fetch_mediawiki_passages(
+        query,
+        top_k=top_k,
+        api_url=WIKINEWS_API,
+        article_base_url="https://en.wikinews.org/wiki",
+        cache_namespace="wikinews",
+    )
+
+
 def _get_setting_or_env(value: str | None, env_name: str) -> str:
     """Return an explicit setting, or fall back to the corresponding env var."""
     if value is not None:
@@ -497,9 +593,7 @@ def fetch_huggingface_passages(  # pylint: disable=too-many-arguments
     token: str | None = None,
 ) -> list[Passage]:
     """Fetch passages from a Hugging Face dataset via datasets-server search."""
-    resolved_dataset = _get_setting_or_env(
-        dataset, HUGGINGFACE_DATASET_ENV
-    )
+    resolved_dataset = _get_setting_or_env(dataset, HUGGINGFACE_DATASET_ENV)
     resolved_config = _get_setting_or_env(config, HUGGINGFACE_CONFIG_ENV)
     resolved_split = _get_setting_or_env(split, HUGGINGFACE_SPLIT_ENV)
     resolved_token = _get_setting_or_env(token, HUGGINGFACE_TOKEN_ENV)
@@ -584,12 +678,8 @@ def fetch_elasticsearch_passages(
     index: str | None = None,
 ) -> list[Passage]:
     """Fetch passages from an Elasticsearch index."""
-    resolved_base_url = _get_setting_or_env(
-        base_url, ELASTICSEARCH_URL_ENV
-    )
-    resolved_index = _get_setting_or_env(
-        index, ELASTICSEARCH_INDEX_ENV
-    )
+    resolved_base_url = _get_setting_or_env(base_url, ELASTICSEARCH_URL_ENV)
+    resolved_index = _get_setting_or_env(index, ELASTICSEARCH_INDEX_ENV)
     if not resolved_base_url or not resolved_index:
         logger.warning(
             "Elasticsearch dataset requested but not configured."
@@ -668,6 +758,517 @@ def fetch_elasticsearch_passages(
             continue
         seen_chunks.add(dedup_key)
         passages.append(_to_passage(hit, source_payload, resolved_index, text))
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_pubmed_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from PubMed using NCBI E-utilities."""
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"pubmed:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    search_payload = _request_json(
+        PUBMED_ESEARCH_API,
+        params={
+            "db": "pubmed",
+            "retmode": "json",
+            "retmax": top_k,
+            "sort": "relevance",
+            "term": query,
+        },
+        cache_namespace="pubmed",
+        context="PubMed search",
+    )
+    if search_payload is None:
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    idlist = search_payload.get("esearchresult", {}).get("idlist", [])
+    if not isinstance(idlist, list) or not idlist:
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+    ids = [_stringify(item) for item in idlist if _stringify(item)]
+    if not ids:
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    summary_payload = _request_json(
+        PUBMED_ESUMMARY_API,
+        params={
+            "db": "pubmed",
+            "retmode": "json",
+            "id": ",".join(ids),
+        },
+        cache_namespace="pubmed",
+        context="PubMed summary",
+    )
+    if summary_payload is None:
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    result_payload = summary_payload.get("result")
+    if not isinstance(result_payload, dict):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    uids = result_payload.get("uids")
+    if not isinstance(uids, list):
+        uids = ids
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for uid in uids[:top_k]:
+        record = result_payload.get(_stringify(uid), {})
+        if not isinstance(record, dict):
+            continue
+        title = _stringify(record.get("title"))
+        source_journal = _stringify(
+            record.get("fulljournalname") or record.get("source") or "PubMed"
+        )
+        pubdate = _stringify(record.get("pubdate"))
+        authors = record.get("authors")
+        author_names: list[str] = []
+        if isinstance(authors, list):
+            for author in authors[:5]:
+                if isinstance(author, dict):
+                    name = _stringify(author.get("name"))
+                    if name:
+                        author_names.append(name)
+        text = " ".join(
+            part
+            for part in [
+                title,
+                f"Journal: {source_journal}" if source_journal else "",
+                f"Published: {pubdate}" if pubdate else "",
+                ("Authors: " + ", ".join(author_names) if author_names else ""),
+            ]
+            if part
+        )
+        url = f"https://pubmed.ncbi.nlm.nih.gov/{_stringify(uid)}/"
+        source = title or source_journal or "PubMed"
+        _append_deduped_passage(
+            passages, seen_chunks, text=text, source=source, url=url
+        )
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_arxiv_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from arXiv Atom API."""
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"arxiv:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    try:
+        response = requests.get(
+            ARXIV_API,
+            params={
+                "search_query": f"all:{query}",
+                "start": 0,
+                "max_results": top_k,
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+            },
+            headers=WIKI_HEADERS,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("arXiv request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning("arXiv request failed: HTTP %s", int(response.status_code))
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    xml_payload = response.text
+    if _UNSAFE_XML_DTD_RE.search(xml_payload):
+        logger.warning("arXiv response contains forbidden XML declarations.")
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    entries = _ARXIV_ENTRY_RE.findall(xml_payload)
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for entry in entries:
+        title = _stringify(_extract_xml_tag_text(entry, "title"))
+        summary = _stringify(_extract_xml_tag_text(entry, "summary"))
+        url = _stringify(_extract_xml_tag_text(entry, "id")) or "https://arxiv.org"
+        source = title or "arXiv"
+        chunks = _chunk_text(summary)
+        if chunks:
+            for chunk in chunks:
+                _append_deduped_passage(
+                    passages, seen_chunks, text=chunk, source=source, url=url
+                )
+            continue
+        _append_deduped_passage(
+            passages, seen_chunks, text=summary, source=source, url=url
+        )
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_openlibrary_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from OpenLibrary search API."""
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"openlibrary:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    try:
+        response = requests.get(
+            OPENLIBRARY_SEARCH_API,
+            params={
+                "q": query,
+                "limit": top_k,
+                "fields": (
+                    "key,title,author_name,first_sentence,"
+                    "subject,first_publish_year,edition_count"
+                ),
+            },
+            headers=WIKI_HEADERS,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("OpenLibrary request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning("OpenLibrary request failed: HTTP %s", int(response.status_code))
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        payload = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("OpenLibrary response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    docs = payload.get("docs", []) if isinstance(payload, dict) else []
+    if not isinstance(docs, list):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        title = _stringify(doc.get("title"))
+        key = _stringify(doc.get("key"))
+        authors = doc.get("author_name")
+        author_text = ""
+        if isinstance(authors, list):
+            author_text = ", ".join(
+                _stringify(author) for author in authors[:5] if author
+            )
+        first_sentence = doc.get("first_sentence")
+        sentence_text = ""
+        if isinstance(first_sentence, list) and first_sentence:
+            sentence_text = _stringify(first_sentence[0])
+        elif isinstance(first_sentence, str):
+            sentence_text = _stringify(first_sentence)
+        subjects = doc.get("subject")
+        subject_text = ""
+        if isinstance(subjects, list):
+            subject_text = ", ".join(
+                _stringify(subject) for subject in subjects[:8] if subject
+            )
+        year = _stringify(doc.get("first_publish_year"))
+        editions = _stringify(doc.get("edition_count"))
+
+        text = " ".join(
+            part
+            for part in [
+                title,
+                f"Authors: {author_text}" if author_text else "",
+                f"First sentence: {sentence_text}" if sentence_text else "",
+                f"Subjects: {subject_text}" if subject_text else "",
+                f"First published: {year}" if year else "",
+                f"Editions: {editions}" if editions else "",
+            ]
+            if part
+        )
+        source = title or "OpenLibrary"
+        url = f"https://openlibrary.org{key}" if key else "https://openlibrary.org"
+        _append_deduped_passage(
+            passages, seen_chunks, text=text, source=source, url=url
+        )
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_stackexchange_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from Stack Exchange advanced search API."""
+    site = os.getenv(STACKEXCHANGE_SITE_ENV, "stackoverflow").strip() or "stackoverflow"
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"stackexchange:passages:{site}:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    try:
+        response = requests.get(
+            STACKEXCHANGE_SEARCH_API,
+            params={
+                "order": "desc",
+                "sort": "relevance",
+                "q": query,
+                "site": site,
+                "pagesize": top_k,
+                "filter": "withbody",
+            },
+            headers=WIKI_HEADERS,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("Stack Exchange request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning(
+            "Stack Exchange request failed: HTTP %s", int(response.status_code)
+        )
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        payload = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("Stack Exchange response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    items = payload.get("items", []) if isinstance(payload, dict) else []
+    if not isinstance(items, list):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = _stringify(item.get("title"))
+        body_html = _stringify(item.get("body") or item.get("excerpt"))
+        body = _strip_html(body_html)
+        tags = item.get("tags")
+        tag_text = ""
+        if isinstance(tags, list):
+            tag_text = ", ".join(_stringify(tag) for tag in tags[:8] if tag)
+        text = " ".join(
+            part
+            for part in [title, body, f"Tags: {tag_text}" if tag_text else ""]
+            if part
+        )
+        source = f"StackExchange:{site}"
+        url = _stringify(item.get("link"))
+        _append_deduped_passage(
+            passages, seen_chunks, text=text, source=source, url=url
+        )
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_dbpedia_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from DBpedia Lookup API."""
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"dbpedia:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    try:
+        response = requests.get(
+            DBPEDIA_LOOKUP_API,
+            params={"query": query, "maxResults": top_k},
+            headers={**WIKI_HEADERS, "Accept": "application/json"},
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("DBpedia request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning("DBpedia request failed: HTTP %s", int(response.status_code))
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        payload = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("DBpedia response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    docs = payload.get("docs", []) if isinstance(payload, dict) else []
+    if not isinstance(docs, list):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        label = doc.get("label")
+        if isinstance(label, list):
+            source = _stringify(label[0] if label else "")
+        else:
+            source = _stringify(label)
+        comment = doc.get("comment")
+        if isinstance(comment, list):
+            comment_text = _stringify(comment[0] if comment else "")
+        else:
+            comment_text = _stringify(comment)
+        classes = doc.get("typeName")
+        class_text = ""
+        if isinstance(classes, list):
+            class_text = ", ".join(_stringify(class_name) for class_name in classes[:8])
+        url_values = doc.get("resource")
+        if isinstance(url_values, list) and url_values:
+            url = _stringify(url_values[0])
+        else:
+            url = _stringify(url_values)
+        text = " ".join(
+            part
+            for part in [
+                source,
+                comment_text,
+                f"Classes: {class_text}" if class_text else "",
+            ]
+            if part
+        )
+        _append_deduped_passage(
+            passages,
+            seen_chunks,
+            text=text,
+            source=source or "DBpedia",
+            url=url or "https://dbpedia.org",
+        )
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_oeis_passages(query: str, *, top_k: int = WIKI_SEARCH_LIMIT) -> list[Passage]:
+    """Fetch passages from OEIS search API."""
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"oeis:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    try:
+        response = requests.get(
+            OEIS_SEARCH_API,
+            params={"q": query, "fmt": "json", "start": 0},
+            headers=WIKI_HEADERS,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("OEIS request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning("OEIS request failed: HTTP %s", int(response.status_code))
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        payload = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("OEIS response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+    if not isinstance(results, list):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for item in results[:top_k]:
+        if not isinstance(item, dict):
+            continue
+        number = item.get("number")
+        number_str = _stringify(number)
+        try:
+            number_int = int(number_str)
+            sequence_id = f"A{number_int:06d}"
+        except Exception:
+            sequence_id = number_str or "OEIS"
+        name = _stringify(item.get("name"))
+        data = _stringify(item.get("data"))
+        comment = _stringify(item.get("comment"))
+        formula = _stringify(item.get("formula"))
+        example = _stringify(item.get("example"))
+        text = " ".join(
+            part
+            for part in [
+                name,
+                f"Data: {data}" if data else "",
+                f"Comment: {comment}" if comment else "",
+                f"Formula: {formula}" if formula else "",
+                f"Example: {example}" if example else "",
+            ]
+            if part
+        )
+        url = (
+            f"https://oeis.org/{sequence_id}"
+            if sequence_id.startswith("A")
+            else "https://oeis.org"
+        )
+        _append_deduped_passage(
+            passages, seen_chunks, text=text, source=sequence_id, url=url
+        )
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
