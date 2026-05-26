@@ -259,6 +259,8 @@ def _report_row(result: BenchmarkProfileResult) -> dict[str, Any]:
         "f1": report.f1,
         "retrieval_recall_at_k": report.retrieval_recall_at_k,
         "confidence_calibration_ece": report.confidence_calibration_ece,
+        "confidence_calibration_kl_divergence": report.confidence_calibration_kl_divergence,
+        "confidence_calibration_js_divergence": report.confidence_calibration_js_divergence,
         "latency_p50_s": report.latency_p50_s,
         "latency_p95_s": report.latency_p95_s,
     }

@@ -171,6 +171,8 @@ report = evaluate_kpis(answers, labels, recall_k=10, calibration_bins=10)
 print(report.answer_success_rate)
 print(report.latency_p95_s)
 print(report.confidence_calibration_ece)
+print(report.confidence_calibration_kl_divergence)
+print(report.confidence_calibration_js_divergence)
 ```
 
 Each `FinalAnswer` now includes `diagnostics` with stage latencies, cache hit/miss
