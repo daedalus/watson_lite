@@ -54,3 +54,12 @@ class TestProcess:
         assert result.question_type == "who"
         assert len(result.entities) > 0
         assert len(result.sub_questions) == 1
+
+    def test_case_insensitive_entity_detection(self, nlp) -> None:
+        upper = nlp.process("Who was the Norse leader?")
+        lower = nlp.process("who was the norse leader?")
+        assert len(upper.entities) > 0
+        assert len(upper.entities) == len(lower.entities)
+        for ue, le in zip(upper.entities, lower.entities):
+            assert ue["label"] == le["label"]
+            assert ue["text"].lower() == le["text"].lower()

@@ -18,6 +18,46 @@ else:  # pragma: no cover - runtime fallback used when type checking is inactive
 
 logger = logging.getLogger(__name__)
 
+
+def _ner_input(text: str, nlp: Any) -> str:
+    """Build a version of *text* that triggers better NER.
+
+    spaCy's NER uses casing as a strong signal.  Lowercased proper nouns
+    (e.g. ``"norse"`` → NOUN, no entity) are missed while their
+    capitalised counterparts (``"Norse"`` → PROPN, ORG entity) are
+    picked up.
+
+    This function runs a lightweight first pass to get POS tags, then
+    capitalises content words (NOUN, PROPN, ADJ, ADV) so the subsequent
+    full pipeline pass detects entities that would otherwise be missed.
+    Function words (VERB, AUX, DET, …) are left in their original casing
+    to avoid destabilising the dependency parse.
+    """
+    with nlp.select_pipes(enable=["tok2vec", "tagger", "attribute_ruler"]):
+        doc = nlp(text)
+    skip = {
+        "VERB",
+        "AUX",
+        "DET",
+        "ADP",
+        "PRON",
+        "SCONJ",
+        "CCONJ",
+        "PART",
+        "INTJ",
+        "PUNCT",
+        "SPACE",
+        "X",
+        "NUM",
+        "SYM",
+    }
+    parts = [
+        t.text.capitalize() if t.pos_ not in skip and t.text.islower() else t.text
+        for t in doc
+    ]
+    return " ".join(parts)
+
+
 QUESTION_TYPES = {
     "who": ["who", "whose", "whom"],
     "what": ["what", "which"],
@@ -292,7 +332,8 @@ class NLPProcessor:
         return clusters
 
     def process(self, question: str, semantic_nlp: bool = False) -> ParsedQuestion:
-        doc = self.nlp(question)
+        normalized = _ner_input(question, self.nlp)
+        doc = self.nlp(normalized)
         question_type = self.classify_question(question)
         lat, lat_qids = _extract_lat(question, question_type)
         semantic_enabled = semantic_nlp or self.semantic_nlp
