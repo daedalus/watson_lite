@@ -155,6 +155,7 @@ def _ece(scores: list[float], labels: list[bool], bins: int = 10) -> float:
 
 
 def _clip_probability(value: float, epsilon: float = 1e-12) -> float:
+    """Clamp a probability away from 0 and 1 to keep divergence math stable."""
     return min(max(value, epsilon), 1.0 - epsilon)
 
 
@@ -163,6 +164,7 @@ def _bernoulli_kl_divergence(
     predicted: float,
     epsilon: float = 1e-12,
 ) -> float:
+    """Compute KL divergence from observed to predicted Bernoulli probabilities."""
     observed = _clip_probability(observed, epsilon)
     predicted = _clip_probability(predicted, epsilon)
     return observed * math.log(observed / predicted) + (1.0 - observed) * math.log(
@@ -175,6 +177,7 @@ def _bernoulli_js_divergence(
     predicted: float,
     epsilon: float = 1e-12,
 ) -> float:
+    """Compute Jensen-Shannon divergence between two Bernoulli probabilities."""
     midpoint = (observed + predicted) / 2.0
     return 0.5 * _bernoulli_kl_divergence(
         observed,
@@ -184,6 +187,7 @@ def _bernoulli_js_divergence(
 
 
 def _calibration_bucket(confidence: float, bins: int) -> int:
+    """Map a confidence score into its calibration bucket index."""
     return min(int(confidence * bins), bins - 1)
 
 
@@ -259,12 +263,12 @@ def _evaluate_labeled(
     ece = _ece(confidence_scores, correctness, bins=calibration_bins)
     kl_divergence = 0.0
     js_divergence = 0.0
-    for scores, correctness_in_bucket in zip(bucket_scores, bucket_correctness):
+    for scores, correctness_values in zip(bucket_scores, bucket_correctness):
         if not scores:
             continue
         weight = len(scores) / total
         mean_confidence = sum(scores) / len(scores)
-        empirical_accuracy = sum(correctness_in_bucket) / len(correctness_in_bucket)
+        empirical_accuracy = sum(correctness_values) / len(correctness_values)
         kl_divergence += weight * _bernoulli_kl_divergence(
             empirical_accuracy,
             mean_confidence,
