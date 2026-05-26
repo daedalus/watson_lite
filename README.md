@@ -46,6 +46,10 @@ alone. The design question is not *"does this beat GPT-4?"* but *"what do you
 get when you optimise for explainability, zero hallucination, and zero cost
 instead of raw benchmark score?"*
 
+
+**Caveat.** Even though this system gives factual correct answers it might give not the expected answer due to question interpretability and or lack of context.
+
+
 ## Install
 
 ```bash
