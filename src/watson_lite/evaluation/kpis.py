@@ -183,6 +183,10 @@ def _bernoulli_js_divergence(
     ) + 0.5 * _bernoulli_kl_divergence(predicted, midpoint, epsilon)
 
 
+def _calibration_bucket(confidence: float, bins: int) -> int:
+    return min(int(confidence * bins), bins - 1)
+
+
 def _recall_hit(retrieved: list[str], evidence_passages: list[str], top_k: int) -> bool:
     if not evidence_passages:
         return False
@@ -234,7 +238,7 @@ def _evaluate_labeled(
         correctness.append(em > 0)
         confidence = float(answer.confidence)
         confidence_scores.append(confidence)
-        bucket = min(int(confidence * calibration_bins), calibration_bins - 1)
+        bucket = _calibration_bucket(confidence, calibration_bins)
         bucket_scores[bucket].append(confidence)
         bucket_correctness[bucket].append(float(em > 0))
 
@@ -255,12 +259,12 @@ def _evaluate_labeled(
     ece = _ece(confidence_scores, correctness, bins=calibration_bins)
     kl_divergence = 0.0
     js_divergence = 0.0
-    for scores, labels_in_bucket in zip(bucket_scores, bucket_correctness):
+    for scores, correctness_in_bucket in zip(bucket_scores, bucket_correctness):
         if not scores:
             continue
         weight = len(scores) / total
         mean_confidence = sum(scores) / len(scores)
-        empirical_accuracy = sum(labels_in_bucket) / len(labels_in_bucket)
+        empirical_accuracy = sum(correctness_in_bucket) / len(correctness_in_bucket)
         kl_divergence += weight * _bernoulli_kl_divergence(
             empirical_accuracy,
             mean_confidence,
