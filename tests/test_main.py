@@ -1,9 +1,20 @@
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from watson_lite.__main__ import _build_parser, main
+from watson_lite.__main__ import (
+    _build_config,
+    _build_parser,
+    _emit_answer,
+    _parse_datasets,
+    _print_text_answer,
+    _run_batch_mode,
+    _run_single_question,
+    _setup_logging,
+    main,
+)
 from watson_lite.core.config import FeatureConfig
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
 
@@ -492,3 +503,193 @@ class TestMain:
             mock_wl_cls.assert_called_once_with(
                 config=mock_wl_cls.call_args.kwargs["config"], device=0
             )
+
+    def test_batch_mode(self, tmp_path: Path) -> None:
+        questions_file = tmp_path / "questions.txt"
+        questions_file.write_text("What is Python?\nWhat is Java?\n", encoding="utf-8")
+        output_json = tmp_path / "results.json"
+
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--questions-from-file",
+                    str(questions_file),
+                    "--output-json",
+                    str(output_json),
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+        assert result == 0
+        assert mock_wl.answer.call_count == 2
+        assert output_json.exists()
+
+    def test_batch_mode_without_output_json(self, tmp_path: Path) -> None:
+        questions_file = tmp_path / "questions.txt"
+        questions_file.write_text("What is Python?\n", encoding="utf-8")
+
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                ["prog", "--questions-from-file", str(questions_file)],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+        assert result == 0
+        mock_wl.answer.assert_called_once()
+
+    def test_single_question_with_output_json(self, tmp_path: Path) -> None:
+        output_json = tmp_path / "answer.json"
+
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                ["prog", "--output-json", str(output_json), "What", "is", "Python?"],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+
+            result = main()
+
+        assert result == 0
+        assert output_json.exists()
+
+    def test_print_text_answer_with_graph_facts(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        answer = FinalAnswer(
+            answer="Paris",
+            confidence=0.9,
+            source="Wiki",
+            url="https://e",
+            graph_facts=["Paris is in France", "Paris has 2M people"],
+        )
+        _print_text_answer(answer, show_diagnostics=False)
+        out = capsys.readouterr().out
+        assert "GRAPH CORROBORATION" in out
+        assert "Paris is in France" in out
+
+    def test_print_text_answer_with_diagnostics(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        answer = FinalAnswer(
+            answer="Paris",
+            confidence=0.9,
+            source="Wiki",
+            url="https://e",
+            diagnostics=AnswerDiagnostics(
+                total_latency_s=0.1,
+                stage_latencies_s={"nlp": 0.01, "retrieval": 0.05},
+                passages_fetched=3,
+                passages_reranked=3,
+                passages_extracted=2,
+                cache_hits=1,
+                cache_misses=2,
+            ),
+        )
+        _print_text_answer(answer, show_diagnostics=True)
+        out = capsys.readouterr().out
+        assert "Diagnostics" in out
+        assert "fetched=3" in out
+        assert "hits=1" in out
+        assert "nlp=" in out
+
+    def test_print_text_answer_show_diagnostics_none_diagnostics(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        answer = FinalAnswer(
+            answer="X",
+            confidence=0.5,
+            source="src",
+            url="https://e",
+            diagnostics=None,
+        )
+        _print_text_answer(answer, show_diagnostics=True)
+        out = capsys.readouterr().out
+        assert "ANSWER" in out
+        assert "Diagnostics" not in out
+
+    def test_setup_logging_with_logfile(self, tmp_path: Path) -> None:
+        import logging
+
+        logfile = tmp_path / "test.log"
+        parser = _build_parser()
+        args = parser.parse_args(["--logfile", str(logfile), "hello"])
+        # Reset root logger handlers to avoid interference
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        root.handlers.clear()
+        try:
+            _setup_logging(args)
+        finally:
+            root.handlers = original_handlers
+
+    def test_setup_logging_with_debug(self) -> None:
+        import logging
+
+        parser = _build_parser()
+        args = parser.parse_args(["--debug", "hello"])
+        root = logging.getLogger()
+        original_level = root.level
+        original_handlers = root.handlers[:]
+        root.handlers.clear()
+        try:
+            _setup_logging(args)
+            assert root.level == logging.DEBUG
+        finally:
+            root.level = original_level
+            root.handlers = original_handlers
+
+    def test_parse_datasets_empty_raises(self) -> None:
+        import argparse
+
+        with pytest.raises(argparse.ArgumentTypeError):
+            _parse_datasets("  ,  , ")
+
+    def test_exclude_datasets(self) -> None:
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--datasets",
+                    "wikipedia,wikibooks,pubmed",
+                    "--exclude-datasets",
+                    "pubmed",
+                    "What",
+                    "is",
+                    "Python?",
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+            result = main()
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert "pubmed" not in called_config.dataset_sources
+            assert "wikipedia" in called_config.dataset_sources
+            assert "wikibooks" in called_config.dataset_sources
