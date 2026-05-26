@@ -1,5 +1,4 @@
 """Tests for pure-Python NLP utility functions that do not require spaCy models."""
-
 from watson_lite.core.nlp import _extract_lat
 
 
