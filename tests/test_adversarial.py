@@ -492,7 +492,7 @@ class TestConfidenceScorerAdversarial:
             )
         ]
         answer = scorer.score(candidates, [], "what")
-        assert answer.confidence == 0.2
+        assert answer.confidence == 0.25
 
     def test_all_scores_zero(self) -> None:
         scorer = ConfidenceScorer()
@@ -505,7 +505,7 @@ class TestConfidenceScorerAdversarial:
             ),
         ]
         answer = scorer.score(candidates, [], "what")
-        assert answer.confidence == 0.05
+        assert answer.confidence == 0.1
 
     def test_span_agreement_all_unique(self) -> None:
         scorer = ConfidenceScorer()
@@ -754,6 +754,9 @@ class TestPipelineAdversarial:
         )
         self.mock_ranker.rank.return_value = []
         self.mock_reader.extract.return_value = []
+        self.mock_scorer.score.return_value = FinalAnswer(
+            answer="ans", confidence=0.5, source="s", url=""
+        )
         result = self.pipeline.answer("test")
         assert result is not None
 

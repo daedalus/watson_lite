@@ -35,6 +35,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="watson-lite")
     parser.add_argument("question", nargs="*", help="Single question to answer")
     parser.add_argument(
+        "--questions-from-file",
+        type=str,
+        default=None,
+        help="Path to a text file with one question per line (batch mode)",
+    )
+    parser.add_argument(
+        "--output-json",
+        type=str,
+        default=None,
+        help="Path to write results as a JSON array (batch mode or single question)",
+    )
+    parser.add_argument(
+        "--exclude-datasets",
+        type=_parse_datasets,
+        default=None,
+        help=("Comma-separated dataset names to exclude (e.g. pubmed,arxiv)"),
+    )
+    parser.add_argument(
         "--profile",
         choices=("baseline", "minimal"),
         default="baseline",
@@ -237,8 +255,9 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         if args.profile == "baseline"
         else FeatureConfig.minimal()
     )
+    enabled = tuple(d for d in args.datasets if d not in (args.exclude_datasets or ()))
     overrides = {
-        "dataset_sources": args.datasets,
+        "dataset_sources": enabled,
         "elasticsearch_url": args.elasticsearch_url,
         "elasticsearch_index": args.elasticsearch_index,
         "huggingface_dataset": args.huggingface_dataset,
@@ -335,7 +354,7 @@ def main() -> int:
             level=log_level,
         )
     else:
-        logging.basicConfig(format="%(message)s", level=log_level)
+        logging.basicConfig(format="%(message)s", level=log_level, stream=sys.stdout)
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -374,9 +393,32 @@ def main() -> int:
 
     watson = WatsonLite(config=config, device=args.device)
 
+    if args.questions_from_file:
+        with open(args.questions_from_file, encoding="utf-8") as f:
+            questions = [line.strip() for line in f if line.strip()]
+        results = []
+        for i, question in enumerate(questions):
+            logging.info("[%d/%d] %s", i + 1, len(questions), question)
+            answer = watson.answer(question, verbose=args.verbose)
+            results.append(asdict(answer))
+            _emit_answer(
+                answer,
+                output_format=args.output,
+                show_diagnostics=args.show_diagnostics,
+            )
+            sys.stdout.flush()
+        if args.output_json:
+            with open(args.output_json, "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=2, sort_keys=True)
+            logging.info("Wrote %d results to %s", len(results), args.output_json)
+        return 0
+
     if args.question:
         question = " ".join(args.question)
         answer = watson.answer(question, verbose=args.verbose)
+        if args.output_json:
+            with open(args.output_json, "w", encoding="utf-8") as f:
+                json.dump(asdict(answer), f, indent=2, sort_keys=True)
         _emit_answer(
             answer,
             output_format=args.output,
