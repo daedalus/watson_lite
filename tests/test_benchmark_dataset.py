@@ -77,3 +77,11 @@ def test_checked_in_benchmark_dataset_runs_regression_smoke(
     assert regressions == []
     payload = json.loads(output_json.read_text(encoding="utf-8"))
     assert "results" in payload
+    first = payload["results"][0]
+    assert "answers" in first
+    assert len(first["answers"]) == 3
+    assert all(
+        {"question", "generated_answer", "reference_answers", "exact_match", "f1",
+         "confidence", "latency_s"}.issubset(a.keys())
+        for a in first["answers"]
+    )
