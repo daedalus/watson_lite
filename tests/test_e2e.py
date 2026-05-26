@@ -230,10 +230,18 @@ class TestE2EPipeline:
         assert hash_one != hash_two
 
     def test_question_type_who_bonus_applied(self, patched_pipeline) -> None:
-        """'Who' question with a multi-word capitalized answer gets a QT bonus."""
+        """'Who' question with a multi-word capitalized answer gets a QT bonus.
+
+        The type-coercion signal is stubbed to a positive value so that the
+        "type-coercion confirms match" path is exercised and the form-based
+        QT bonus is not suppressed by the type-coercion guard.
+        """
         watson, _, mock_qa = patched_pipeline
         mock_qa.return_value = {"answer": "Gustave Eiffel", "score": 0.85}
-        result = watson.answer("Who designed the Eiffel Tower?", verbose=False)
+        with patch(
+            "watson_lite.core.extractor.score_type_coercion", return_value=0.1
+        ):
+            result = watson.answer("Who designed the Eiffel Tower?", verbose=False)
         assert result.confidence_breakdown.get("question_type_bonus", 0) == 0.1
 
     def test_question_type_when_bonus_applied(self, patched_pipeline) -> None:

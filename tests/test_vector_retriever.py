@@ -147,3 +147,36 @@ class TestVectorRetriever:
 
         result = self.retriever.retrieve("test", top_k=3)
         assert len(result) == 3
+
+    def test_init_raises_when_sentence_transformers_missing(self) -> None:
+        self.st_patcher.stop()
+        self.faiss_patcher.stop()
+
+        with (
+            patch("watson_lite.retrieval.vector_retriever.SentenceTransformer", None),
+            patch("watson_lite.retrieval.vector_retriever.faiss", MagicMock()),
+        ):
+            with pytest.raises(ImportError, match="sentence-transformers"):
+                VectorRetriever()
+
+    def test_init_raises_when_faiss_missing(self) -> None:
+        self.st_patcher.stop()
+        self.faiss_patcher.stop()
+
+        with (
+            patch("watson_lite.retrieval.vector_retriever.SentenceTransformer", MagicMock()),
+            patch("watson_lite.retrieval.vector_retriever.faiss", None),
+        ):
+            with pytest.raises(ImportError, match="faiss-cpu"):
+                VectorRetriever()
+
+    def test_init_raises_when_both_missing(self) -> None:
+        self.st_patcher.stop()
+        self.faiss_patcher.stop()
+
+        with (
+            patch("watson_lite.retrieval.vector_retriever.SentenceTransformer", None),
+            patch("watson_lite.retrieval.vector_retriever.faiss", None),
+        ):
+            with pytest.raises(ImportError, match="sentence-transformers"):
+                VectorRetriever()
