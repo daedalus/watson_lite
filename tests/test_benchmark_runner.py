@@ -91,6 +91,17 @@ def test_run_benchmark_profiles_outputs_files(tmp_path: Path) -> None:
     header = output_csv.read_text(encoding="utf-8").splitlines()[0].split(",")
     assert "confidence_calibration_kl_divergence" in header
     assert "confidence_calibration_js_divergence" in header
+    first = payload["results"][0]
+    assert "answers" in first
+    assert len(first["answers"]) == 1
+    answer_row = first["answers"][0]
+    assert answer_row["question"] == "What is the capital of France?"
+    assert answer_row["generated_answer"] == "Paris"
+    assert answer_row["reference_answers"] == ["Paris"]
+    assert answer_row["exact_match"] == 1.0
+    assert answer_row["f1"] == 1.0
+    assert "confidence" in answer_row
+    assert "latency_s" in answer_row
 
 
 def test_run_benchmark_profiles_detects_regression(tmp_path: Path) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +86,7 @@ class BenchmarkProfileResult:
     profile: str
     config: FeatureConfig
     report: KPIReport
+    answers_with_metrics: list[dict[str, Any]] = field(default_factory=list)
 
 
 def load_benchmark_dataset(path: str) -> list[BenchmarkSample]:
@@ -153,6 +154,7 @@ def _run_profile(
     cache = _get_answer_cache()
     answers: list[FinalAnswer] = []
     labels: list[BenchmarkLabel] = []
+    per_answer: list[dict[str, Any]] = []
     total = len(samples)
     for i, sample in enumerate(samples):
         key = _cache_key(profile, sample.question)
@@ -175,6 +177,21 @@ def _run_profile(
 
         em = max(exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers)
         f1 = max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
+        latency = (
+            ans.diagnostics.total_latency_s if ans.diagnostics is not None else None
+        )
+        per_answer.append(
+            {
+                "question": sample.question,
+                "generated_answer": ans.answer,
+                "reference_answers": sample.answers,
+                "exact_match": em,
+                "f1": f1,
+                "confidence": ans.confidence,
+                "latency_s": latency,
+            }
+        )
+
         q = sample.question[:80] + ("…" if len(sample.question) > 80 else "")
         a = ans.answer[:60] + ("…" if len(ans.answer) > 60 else "")
         expected = " | ".join(sample.answers[:3])
@@ -192,7 +209,12 @@ def _run_profile(
         calibration_bins=calibration_bins,
         normalize_fn=normalize_fn,
     )
-    return BenchmarkProfileResult(profile=profile, config=config, report=report)
+    return BenchmarkProfileResult(
+        profile=profile,
+        config=config,
+        report=report,
+        answers_with_metrics=per_answer,
+    )
 
 
 def _metric_drop(
@@ -322,6 +344,7 @@ def run_benchmark_profiles(  # pylint: disable=too-many-arguments
                 "profile": r.profile,
                 "config": asdict(r.config),
                 "metrics": asdict(r.report),
+                "answers": r.answers_with_metrics,
             }
             for r in results
         ],
