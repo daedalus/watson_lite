@@ -410,6 +410,17 @@ class WatsonLite:
             )
 
         entity_names = [str(entity["text"]) for entity in parsed.entities]
+        if not entity_names:
+            _question_words = frozenset(
+                {"who", "what", "when", "where", "why", "how", "whom", "whose"}
+            )
+            nps = [
+                nc
+                for nc in parsed.noun_chunks
+                if nc.lower().strip() not in _question_words
+            ]
+            if nps:
+                entity_names = [max(nps, key=len)]
         if entity_names:
             self._log_detail(verbose, "Entity direct page fetch: %s", entity_names)
             for entity_text in entity_names:
