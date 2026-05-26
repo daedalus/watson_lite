@@ -1,0 +1,500 @@
+[2285/5000] EM=1.00 F1=1.00 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: WHat did foreign clones of DATAPAC allow for
+  A: interconnection of national X.25 networks
+  ≈: interconnection of national X.25 networks | the interconnection of national X.25 networks | A user or host could call a host on a foreign network by including the DNIC of the remote network as part of the destination address
+
+[2286/5000] EM=0.00 F1=0.40 conf=0.32 [cache/MISS]                                                                                                                                                  
+  Q: What was AUSTPAC
+  A: Australia's first public packet-switched data network
+  ≈: an Australian public X.25 network | an Australian public X.25 network operated by Telstra | AUSTPAC was an Australian public X.25 network operated by Telstra
+
+[2287/5000] EM=0.00 F1=0.44 conf=0.22 [cache/MISS]                                                                                                                                                  
+  Q: What did AUSTPAC support
+  A: on-line betting
+  ≈: supporting applications such as on-line betting, financial applications | applications such as on-line betting, financial applications
+
+[2288/5000] EM=0.00 F1=0.90 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: How are AUSTPAC connections made
+  A: via a dial-up terminal to a PAD, or, by linking a permanent …
+  ≈: dial-up terminal | Access can be via a dial-up terminal to a PAD, or, by linking a permanent X.25 node to the network | dial-up terminal to a PAD, or, by linking a permanent X.25 node
+
+[2289/5000] EM=1.00 F1=1.00 conf=0.33 [cache/MISS]                                                                                                                                                  
+  Q: What was DATANET 1
+  A: the public switched data network
+  ≈: public switched data network | the public switched data network operated by the Dutch PTT Telecom | was the public switched data network operated by the Dutch PTT Telecom
+
+[2290/5000] EM=0.00 F1=0.00 conf=0.37 [cache/MISS]                                                                                                                                                  
+  Q: Strictly speaking who was included in DATANET 1
+  A: PDP-11s
+  ≈: Datanet 1 only referred to the network and the connected users via leased lines | the network | the network and the connected users
+
+[2291/5000] EM=0.00 F1=0.00 conf=0.15 [cache/MISS]                                                                                                                                                  
+  Q: Who else did DATNET 1 refer to
+  A: an unspecified person
+  ≈: the public PAD service Telepad | public PAD service Telepad | public PAD service Telepad (using the DNIC 2049
+
+[2292/5000] EM=0.00 F1=0.06 conf=0.22 [cache/MISS]                                                                                                                                                  
+  Q: Was the Use of the DATANET 1 name correct
+  A: Strictly speaking Datanet 1 only referred to the network and…
+  ≈: Dutch PTT Telecom | the name was incorrect | use of the name was incorrect all these services were managed by the same people within one department of KPN contributed to the confusion
+
+[2293/5000] EM=1.00 F1=1.00 conf=0.36 [cache/MISS]                                                                                                                                                  
+  Q: What is CSNET
+  A: Computer Science Network
+  ≈: a computer network funded by the U.S. National Science Foundation (NSF) | Computer Science Network | The Computer Science Network
+
+[2294/5000] EM=1.00 F1=1.00 conf=0.44 [cache/MISS]                                                                                                                                                  
+  Q: What was the purpose of CSNET
+  A: to extend networking benefits
+  ≈: extend networking benefits | to extend networking benefits | to extend networking benefits, for computer science departments at academic and research institutions that could not be directly connected to ARPANET
+
+[2295/5000] EM=0.00 F1=0.00 conf=0.21 [cache/MISS]                                                                                                                                                  
+  Q: Funding limitations allowed CSNET to be what
+  A: Computer Science Network
+  ≈: role in spreading awareness of, and access to, national networking and was a major milestone on the path to development of the global Internet | not be directly connected to ARPANET
+
+[2296/5000] EM=1.00 F1=1.00 conf=0.35 [cache/MISS]                                                                                                                                                  
+  Q: what is Internet2
+  A: a not-for-profit United States computer networking consortiu…
+  ≈: a not-for-profit United States computer networking consortium led by members from the research and education communities, industry, and government | not-for-profit United States computer networking consortium
+
+[2297/5000] EM=0.00 F1=0.00 conf=0.49 [cache/MISS]                                                                                                                                                  
+  Q: Who did internet2 partner with
+  A: Level 3 Communications
+  ≈: Qwest | The Internet2 community, in partnership with Qwest
+
+[2298/5000] EM=1.00 F1=1.00 conf=0.57 [cache/MISS]                                                                                                                                                  
+  Q: What was the first internet2 network named
+  A: Abilene
+  ≈: Abilene
+
+[2299/5000] EM=1.00 F1=1.00 conf=0.49 [HIT]
+  Q: Who did internet2 partner with
+  A: Level 3 Communications
+  ≈: a partnership with Level 3 Communications to launch a brand new nationwide network | Qwest | Level 3 Communications
+
+[2300/5000] EM=0.00 F1=0.09 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: ableine was retired and the new platform is called
+  A: Toyota New Global Architecture TNGA-L platform
+  ≈: Internet2 officially retired Abilene and now refers to its new, higher capacity network as the Internet2 Network | Internet2 Network
+
+[2301/5000] EM=0.00 F1=0.00 conf=0.39 [cache/MISS]                                                                                                                                                  
+  Q: What is NSFNET
+  A: a 56 kbit/s backbone to support the NSF-sponsored supercompu…
+  ≈: National Science Foundation Network | The National Science Foundation Network
+
+[2302/5000] EM=1.00 F1=1.00 conf=0.46 [cache/MISS]                                                                                                                                                  
+  Q: What did NSFNET promote
+  A: advanced research and education networking
+  ≈: advanced research and education networking in the United States | advanced research and education networking
+
+[2303/5000] EM=0.00 F1=0.13 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: What did NSFNET eventually provide
+  A: access between the supercomputer centers and other sites ove…
+  ≈: it developed into a major part of the Internet backbone | major part of the Internet backbone | a major part of the Internet backbone
+
+[2304/5000] EM=0.00 F1=0.00 conf=0.15 [cache/MISS]                                                                                                                                                  
+  Q: what does vBNS stand for
+  A: A stand-in
+  ≈: The Very high-speed Backbone Network Service | Very high-speed Backbone Network Service
+
+[2305/5000] EM=0.00 F1=0.97 conf=0.24 [cache/MISS]                                                                                                                                                  
+  Q: What did vBNS do
+  A: to provide high-speed interconnection between NSF-sponsored …
+  ≈: provide high-speed interconnection between NSF-sponsored supercomputing centers and select access points in the United States | high-speed interconnection
+
+[2306/5000] EM=0.00 F1=0.00 conf=0.36 [cache/MISS]                                                                                                                                                  
+  Q: Who operated the vBSN network
+  A: TBS Radio
+  ≈: National Science Foundation | The network was engineered and operated by MCI Telecommunications under a cooperative agreement with the NSF | MCI Telecommunications
+
+[2307/5000] EM=0.00 F1=0.00 conf=0.13 [cache/MISS]                                                                                                                                                  
+  Q: By 199 how many universities were connected
+  A: 19
+              
+            
+            
+              
+ …
+  ≈: more than 100 universities | By 1998, the vBNS had grown to connect more than 100 universities and research and engineering institutions via 12 national points of presence with DS-3 | 100
+
+[2308/5000] EM=0.00 F1=0.07 conf=0.21 [cache/MISS]                                                                                                                                                  
+  Q: What did the network install in 1999
+  A: Space: 1999 Network
+  ≈: vBNS installed one of the first ever production OC-48c (2.5 Gbit/s) IP links in February 1999 and went on to upgrade the entire backbone to OC-48c | OC-48c | one of the first ever production OC-48c (2.5 Gbit/s) IP links
+
+[2309/5000] EM=0.00 F1=0.67 conf=0.44 [cache/MISS]                                                                                                                                                  
+  Q: Where did the black death originate?
+  A: Asia
+  ≈: the arid plains of Central Asia | Central Asia
+
+[2310/5000] EM=0.00 F1=0.00 conf=0.29 [cache/MISS]                                                                                                                                                  
+  Q: How did the black death make it to the Mediterranean and Europe?
+  A: via Constantinople, Sicily, and the Italian Peninsula
+  ≈: merchant ships. | merchant ships | Silk Road
+
+[2311/5000] EM=0.00 F1=0.00 conf=0.56 [cache/MISS]                                                                                                                                                  
+  Q: How much of the European population did the black death kill?
+  A: 30% to 60%
+  ≈: 30–60% of Europe's total population | 30–60%
+
+[2312/5000] EM=0.00 F1=0.00 conf=0.57 [cache/MISS]                                                                                                                                                  
+  Q: When did the world's population finally recover from the black death?
+  A: 1350
+  ≈: the 17th century | 17th century
+
+[2313/5000] EM=0.00 F1=0.00 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: For how long did the plague stick around?
+  A: 1665 to 1666
+  ≈: until the 19th century | 19th century
+
+[2314/5000] EM=0.00 F1=0.00 conf=0.20 [cache/MISS]                                                                                                                                                  
+  Q: What does it mean for a disease to be enzootic?
+  A: abortion in sheep are easily transmitted to pregnant women
+  ≈: commonly present
+
+[2315/5000] EM=0.00 F1=0.00 conf=0.18 [cache/MISS]                                                                                                                                                  
+  Q: How old are the gravestones that reference the plague?
+  A: Riley graves
+  ≈: dating to 1338–39 | 1338–39
+
+[2316/5000] EM=0.00 F1=0.00 conf=0.20 [cache/MISS]                                                                                                                                                  
+  Q: Where do scientists think all of the plagues originated from?
+  A: Mongolia
+  ≈: China
+
+[2317/5000] EM=0.00 F1=0.00 conf=0.52 [cache/MISS]                                                                                                                                                  
+  Q: When did the Chinese famine begin?
+  A: 1876–1879
+  ≈: 1331
+
+[2318/5000] EM=0.00 F1=0.29 conf=0.40 [cache/MISS]                                                                                                                                                  
+  Q: How many did this epidemic in China kill?
+  A: between 1 and 1.28 million
+  ≈: an estimated 25 million | 25 million
+
+[2319/5000] EM=1.00 F1=1.00 conf=0.62 [cache/MISS]                                                                                                                                                  
+  Q: Who introduced plague to Europe?
+  A: Genoese traders
+  ≈: Genoese traders
+
+[2320/5000] EM=0.00 F1=0.00 conf=0.49 [cache/MISS]                                                                                                                                                  
+  Q: Who did the army siege belong to?
+  A: 2nd Ukrainian Front
+  ≈: Jani Beg
+
+[2321/5000] EM=0.00 F1=0.00 conf=0.49 [cache/MISS]                                                                                                                                                  
+  Q: What did the Mongol army throw in their catapults?
+  A: bombs
+  ≈: infected corpses
+
+[2322/5000] EM=0.00 F1=0.67 conf=0.47 [cache/MISS]                                                                                                                                                  
+  Q: Where did the genoese traders bring the plague?
+  A: Sicily and Southern Europe
+  ≈: Sicily and the south of Europe | Sicily
+
+[2323/5000] EM=0.00 F1=0.00 conf=0.39 [cache/MISS]                                                                                                                                                  
+  Q: What contributed to the severity of the plague?
+  A: soldiers returning from the campaign in Western Asia
+  ≈: war, famine, and weather
+
+[2324/5000] EM=0.00 F1=0.00 conf=0.21 [cache/MISS]                                                                                                                                                  
+  Q: Which direction did the disease first move in?
+  A: opposite
+  ≈: northwest across Europe | northwest
+
+[2325/5000] EM=0.00 F1=0.00 conf=0.58 [cache/MISS]                                                                                                                                                  
+  Q: Which country was the last to receive the disease?
+  A: Somalia
+  ≈: northwestern Russia | Russia
+
+[2326/5000] EM=0.00 F1=0.00 conf=0.22 [cache/MISS]                                                                                                                                                  
+  Q: What types of European groups were able to avoid the plague?
+  A: Native Americans
+  ≈: parts of Europe that had smaller trade relations with their neighbours | smaller trade relations with their neighbours
+
+[2327/5000] EM=0.00 F1=0.86 conf=0.53 [cache/MISS]                                                                                                                                                  
+  Q: Where was the disease spreading between 1348 and 1350?
+  A: Germany, Scotland and Scandinavia
+  ≈: Germany and Scandinavia
+
+[2328/5000] EM=0.00 F1=0.00 conf=0.38 [cache/MISS]                                                                                                                                                  
+  Q: When did a plague-ridden ship land in Norway?
+  A: 16 February 1940
+  ≈: 1349
+
+[2329/5000] EM=1.00 F1=1.00 conf=0.33 [cache/MISS]                                                                                                                                                  
+  Q: What effect did the plague have on the Middle East?
+  A: serious depopulation and permanent change in both economic a…
+  ≈: serious depopulation and permanent change in both economic and social structures | depopulation and permanent change in both economic and social structures
+
+[2330/5000] EM=1.00 F1=1.00 conf=0.61 [cache/MISS]                                                                                                                                                  
+  Q: When had the plague reached Alexandria?
+  A: autumn 1347
+  ≈: autumn 1347 | 1347
+
+[2331/5000] EM=0.00 F1=0.00 conf=0.23 [cache/MISS]                                                                                                                                                  
+  Q: How did the plague infiltrate Alexandria?
+  A: walking swarm
+  ≈: port's trade | trade with Constantinople | y through the port's trade with Constantinople, and ports on the Black Sea
+
+[2332/5000] EM=0.00 F1=0.00 conf=0.30 [cache/MISS]                                                                                                                                                  
+  Q: Where did the residents of Antioch flee to?
+  A: other settlements
+  ≈: the north | The city's residents fled to the north | north
+
+[2333/5000] EM=0.00 F1=0.00 conf=0.38 [cache/MISS]                                                                                                                                                  
+  Q: Who claimed that the name Black Death first appeared in 1631?
+  A: J. I. Pontanus
+  ≈: Gasquet
+
+[2334/5000] EM=0.00 F1=1.00 conf=0.53 [cache/MISS]                                                                                                                                                  
+  Q: What is the Latin name for Black Death?
+  A: mors atra
+  ≈: atra mors
+
+[2335/5000] EM=0.00 F1=0.00 conf=0.51 [cache/MISS]                                                                                                                                                  
+  Q: Who allegedly coined the name Black Death?
+  A: Simon de Covino
+  ≈: J.I. Pontanus
+
+[2336/5000] EM=0.00 F1=0.00 conf=0.63 [cache/MISS]                                                                                                                                                  
+  Q: When did the name black death officially take root in England?
+  A: 1348
+  ≈: 1823
+
+[2337/5000] EM=0.00 F1=0.00 conf=0.35 [cache/MISS]                                                                                                                                                  
+  Q: Did the plague spread in Scandinavia or Germany first?
+  A: Germany
+  ≈: Scandinavia
+
+[2338/5000] EM=0.00 F1=0.00 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: What was the black death originally blamed on?
+  A: Yersinia pestis bacteria
+  ≈: the heavens
+
+[2339/5000] EM=0.00 F1=0.00 conf=0.50 [cache/MISS]                                                                                                                                                  
+  Q: Who was the medical report written for?
+  A: Carnegie Foundation
+  ≈: king of France | the king of France
+
+[2340/5000] EM=0.00 F1=0.20 conf=0.30 [cache/MISS]                                                                                                                                                  
+  Q: What is the newer, more widely accepted theory behind the spread of the plague?
+  A: bubonic plague theory
+  ≈: great pestilence in the air | That the plague was caused by bad air | bad air
+
+[2341/5000] EM=0.00 F1=0.00 conf=0.52 [cache/MISS]                                                                                                                                                  
+  Q: What is the bad air theory officially known as?
+  A: night air
+  ≈: Miasma theory | Miasma theory.
+
+[2342/5000] EM=0.00 F1=0.00 conf=0.33 [cache/MISS]                                                                                                                                                  
+  Q: What was considered responsible for the black death as well as the epidemic in s…
+  A: rats
+  ≈: Yersinia pestis
+
+[2343/5000] EM=0.00 F1=0.00 conf=0.36 [cache/MISS]                                                                                                                                                  
+  Q: Where and when did the investigation of the plague pathogen begin?
+  A: April 1941
+  ≈: Hong Kong in 1894 | Hong Kong
+
+[2344/5000] EM=0.00 F1=0.67 conf=0.47 [cache/MISS]                                                                                                                                                  
+  Q: Who was yersinia pestis named for?
+  A: Alexandre Émile John Yersin
+  ≈: Alexandre Yersin | French-Swiss bacteriologist Alexandre Yersin
+
+[2345/5000] EM=0.00 F1=0.00 conf=0.25 [cache/MISS]                                                                                                                                                  
+  Q: What did Paul-Louis Simond establish in 1898?
+  A: Pasteur Institute
+  ≈: mechanism by which Y. pestis was usually transmitted | The mechanism by which Y. pestis was usually transmitted
+
+[2346/5000] EM=1.00 F1=1.00 conf=0.40 [cache/MISS]                                                                                                                                                  
+  Q: What was the bubonic plague mechanism reliant on?
+  A: two populations of rodents
+  ≈: two populations of rodents
+
+[2347/5000] EM=0.00 F1=0.86 conf=0.62 [cache/MISS]                                                                                                                                                  
+  Q: Who wrote about the great pestilence in 1893?
+  A: Cardinal Francis Aidan Gasquet
+  ≈: Francis Aidan Gasquet
+
+[2348/5000] EM=1.00 F1=1.00 conf=0.33 [cache/MISS]                                                                                                                                                  
+  Q: What did Gasquet think the plague was?
+  A: some form of the ordinary Eastern or bubonic plague
+  ≈: bubonic plague | ordinary Eastern or bubonic plague | some form of the ordinary Eastern or bubonic plague
+
+[2349/5000] EM=0.00 F1=0.00 conf=0.29 [cache/MISS]                                                                                                                                                  
+  Q: When did the second edition of Gasquet's book come out?
+  A: 2024
+  ≈: 1908
+
+[2350/5000] EM=0.00 F1=0.22 conf=0.21 [cache/MISS]                                                                                                                                                  
+  Q: What did Gasquet's book blame the plague on?
+  A: astrological conjunction of Jupiter and Saturn
+  ≈: rats and fleas
+
+[2351/5000] EM=0.00 F1=0.00 conf=0.19 [cache/MISS]                                                                                                                                                  
+  Q: What is another plague thought to have spread the same way?
+  A: Yersinia pestis
+  ≈: Justinian plague | the Justinian plague that was prevalent in the Eastern Roman Empire from 541 to 700 CE.
+
+[2352/5000] EM=0.00 F1=0.00 conf=0.56 [cache/MISS]                                                                                                                                                  
+  Q: What is the mortality rate of the modern bubonic plague?
+  A: 11%,
+  ≈: 30–75%
+
+[2353/5000] EM=0.00 F1=0.00 conf=0.35 [cache/MISS]                                                                                                                                                  
+  Q: How high do plague fevers run?
+  A: >39 °
+  ≈: 100–106 °F | 38–41 °C | 41 °C
+
+[2354/5000] EM=1.00 F1=1.00 conf=0.51 [cache/MISS]                                                                                                                                                  
+  Q: What percent of untreated victims of the plague die within 8 days?
+  A: 80%
+  ≈: 80 percent | 80
+
+[2355/5000] EM=0.00 F1=0.00 conf=0.49 [cache/MISS]                                                                                                                                                  
+  Q: What is the mortality rate of pneumonic plague?
+  A: 100%
+  ≈: 90 to 95 percent | 90 to 95
+
+[2356/5000] EM=0.00 F1=0.00 conf=0.27 [cache/MISS]                                                                                                                                                  
+  Q: What skin-related symptom appears from the pneumonic plague?
+  A: eruption
+  ≈: purple skin patches
+
+[2357/5000] EM=0.00 F1=0.00 conf=0.26 [cache/MISS]                                                                                                                                                  
+  Q: When did the Plos Pathogens paper come out?
+  A: 2012
+  ≈: In October 2010 | October 2010
+
+[2358/5000] EM=0.00 F1=0.18 conf=0.31 [cache/MISS]                                                                                                                                                  
+  Q: What was the Plos Pathogens paper about?
+  A: comprehensive characterization of nanobacteria
+  ≈: the role of Yersinia pestis in the Black Death | a new investigation into the role of Yersinia pestis in the Black Death | role of Yersinia pestis in the Black Death
+
+[2359/5000] EM=0.00 F1=0.00 conf=0.22 [cache/MISS]                                                                                                                                                  
+  Q: How did scientists assess the DNA/RNA of yersinia pestis?
+  A: deep sequencing
+  ≈: Polymerase Chain Reaction (PCR) techniques | with Polymerase Chain Reaction (PCR)
+
+[2360/5000] EM=0.00 F1=0.40 conf=0.28 [cache/MISS]                                                                                                                                                  
+  Q: Where did scientists find their Y. pestis sample?
+  A: mass graves
+  ≈: mass graves in northern, central and southern Europe | tooth sockets in human skeletons | from the tooth sockets in human skeletons
+
+[2361/5000] EM=0.00 F1=0.07 conf=0.23 [cache/MISS]                                                                                                                                                  
+  Q: What does the plos pathogen paper claim?
+  A: a Neanderthal molar recovered from Chagyrskaya Cave in south…
+  ≈: unambiguously demonstrates that Y. pestis was the causative agent of the epidemic plague | Y. pestis was the causative agent of the epidemic plague that devastated Europe during the Middle Ages | Y. pestis was the causative agent of the epidemic plague
+
+[2362/5000] EM=0.00 F1=0.00 conf=0.43 [cache/MISS]                                                                                                                                                  
+  Q: What are clades?
+  A: a phylogenetic group
+  ≈: genetic branches
+
+[2363/5000] EM=0.00 F1=0.00 conf=0.20 [cache/MISS]                                                                                                                                                  
+  Q: What strains of y. pestis were found in the mass graves?
+  A: Gok2
+  ≈: Y. p. orientalis and Y. p. medievalis | Y. pestis
+
+[2364/5000] EM=0.00 F1=0.56 conf=0.25 [cache/MISS]                                                                                                                                                  
+  Q: What do the strains of y. pestis suggest abut the plague?
+  A: these variant strains (which are now presumed to be extinct)…
+  ≈: may have entered Europe in two waves | the plague may have entered Europe in two waves
+
+[2365/5000] EM=0.00 F1=0.67 conf=0.36 [cache/MISS]                                                                                                                                                  
+  Q: How and when did the first variant of y. pestis enter Europe?
+  A: November 1347
+  ≈: through the port of Marseille around November 1347 | the port of Marseille around November 1347 | 1347
+
+[2366/5000] EM=1.00 F1=1.00 conf=0.56 [cache/MISS]                                                                                                                                                  
+  Q: When did the y. pestis reach England?
+  A: spring of 1349
+  ≈: 1349 | spring of 1349
+
+[2367/5000] EM=0.00 F1=0.00 conf=0.21 [cache/MISS]                                                                                                                                                  
+  Q: What is the current status of the Haensch study?
+  A: no definitive evidence of any kind of organised christianity…
+  ≈: confirmed and amended
+
+[2368/5000] EM=0.00 F1=0.00 conf=0.25 [cache/MISS]                                                                                                                                                  
+  Q: Where was the burial site used for testing located?
+  A: Lop Nur
+  ≈: England | East Smithfield
+
+[2369/5000] EM=1.00 F1=1.00 conf=0.28 [cache/MISS]                                                                                                                                                  
+  Q: What is thought to have happened to the y. pestis that caused the black death?
+  A: may no longer exist
+  ≈: may no longer exist
+
+[2370/5000] EM=0.00 F1=0.00 conf=0.62 [cache/MISS]                                                                                                                                                  
+  Q: When was the study on sequenced Y genomes published?
+  A: August 2023
+  ≈: October 2011
+
+[2371/5000] EM=0.00 F1=0.00 conf=0.29 [cache/MISS]                                                                                                                                                  
+  Q: Who challenged the plague theory first?
+  A: epidemiologists
+  ≈: British bacteriologist J. F. D. Shrewsbury | J. F. D. Shrewsbury
+
+[2372/5000] EM=0.00 F1=0.08 conf=0.24 [cache/MISS]                                                                                                                                                  
+  Q: What did Shrewsbury note about the plague?
+  A: the number of local church benefices falling vacant due to d…
+  ≈: the reported rates of mortality in rural areas during the 14th-century pandemic were inconsistent with the modern bubonic plague | rates of mortality in rural areas during the 14th-century pandemic were inconsistent with the modern bubonic plague | reported rates of mortality in rural areas during the 14th-century pandemic were inconsistent with the modern bubonic plague
+
+[2373/5000] EM=0.00 F1=0.00 conf=0.28 [cache/MISS]                                                                                                                                                  
+  Q: What was Shrewsbury's conclusion?
+  A: the campaign against the French in Quebec
+  ≈: contemporary accounts were exaggerations
+
+[2374/5000] EM=0.00 F1=0.00 conf=0.52 [cache/MISS]                                                                                                                                                  
+  Q: What did Graham Twigg publish in 1984?
+  A: The Black Death: A Biological Reappraisal
+  ≈: the first major work to challenge the bubonic plague theory directly | first major work to challenge the bubonic plague theory directly,
+
+[2375/5000] EM=0.00 F1=0.00 conf=0.38 [cache/MISS]                                                                                                                                                  
+  Q: Who discussed Twigg's study in 2002?
+  A: Robin Cook
+  ≈: Samuel K. Cohn, Jr.
+
+[2376/5000] EM=0.00 F1=0.00 conf=0.41 [cache/MISS]                                                                                                                                                  
+  Q: What is as important as identifying plague symptoms?
+  A: laboratory testing
+  ≈: an epidemiological account | epidemiological account of the plague
+
+[2377/5000] EM=0.00 F1=0.00 conf=0.16 [cache/MISS]                                                                                                                                                  
+  Q: Why are researchers struggling to identify the history of the plague?
+  A: ignoring scholarship that suggests it had a less than catast…
+  ≈: the lack of reliable statistics | the lack of reliable statistics from this period | lack of reliable statistics
+
+[2378/5000] EM=1.00 F1=1.00 conf=0.42 [cache/MISS]                                                                                                                                                  
+  Q: How much do estimations of the population during the plague vary?
+  A: over 100%,
+  ≈: over 100% | by over 100%
+
+[2379/5000] EM=0.00 F1=0.18 conf=0.24 [cache/MISS]                                                                                                                                                  
+  Q: Where can population estimates be extrapolated from?
+  A: animal studies to humans and from pilot studies
+  ≈: figures from the clergy | the clergy
+
+[2380/5000] EM=0.00 F1=0.00 conf=0.48 [cache/MISS]                                                                                                                                                  
+  Q: During which years was no census taken?
+  A: 1941
+  ≈: 1377 | between the time of publication of the Domesday Book and the year 1377
+
+[2381/5000] EM=0.00 F1=0.21 conf=0.29 [cache/MISS]                                                                                                                                                  
+  Q: Why might rats not be responsible for the plague?
+  A: rats did not directly start the spread of the bubonic plague
+  ≈: rat population was insufficient to account for a bubonic plague pandemic | rat population was insufficient | the rat population was insufficient
+
+[2382/5000] EM=0.00 F1=0.00 conf=0.16 [cache/MISS]                                                                                                                                                  
+  Q: How significant was the transfer of disease through fleas?
+  A: The tapeworm Dipylidium caninum can be transmitted when an i…
+  ≈: marginal | of marginal significance
+
+[2383/5000] EM=0.00 F1=0.00 conf=0.19 [cache/MISS]                                                                                                                                                  
+  Q: Why  might the temperature affect the theory of plague spreading?
+  A: it killed off its hosts at a rate faster than they could spr…
+  ≈: temperatures that are too cold in northern Europe for the survival of fleas | too cold in northern Europe for the survival of fleas
+

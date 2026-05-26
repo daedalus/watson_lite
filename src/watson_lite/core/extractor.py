@@ -172,6 +172,215 @@ class ConfidenceScorer:
 
         return evidence_chain
 
+    def _compute_graph_signals(
+        self, best: AnswerCandidate, graph_results: list[GraphResult]
+    ) -> tuple[bool, list[str]]:
+        graph_corroborated = False
+        graph_facts_used: list[str] = []
+        for gr in graph_results:
+            for fact in gr.facts:
+                if (
+                    best.span.lower() in fact.value.lower()
+                    or fact.value.lower() in best.span.lower()
+                ):
+                    graph_corroborated = True
+                    graph_facts_used.append(f"{fact.property_label}: {fact.value}")
+        return graph_corroborated, graph_facts_used
+
+    @staticmethod
+    def _compute_base_signals(
+        best: AnswerCandidate, candidates: list[AnswerCandidate]
+    ) -> tuple[float, float, float, float]:
+        extraction_conf = best.extraction_score
+        spans = [c.span.lower().strip() for c in candidates]
+        agreement = spans.count(best.span.lower().strip()) / len(spans)
+        rank_signal = max(0.0, 1.0 - (best.rank - 1) * 0.1)
+        max_doc_frequency = max(c.doc_frequency for c in candidates)
+        frequency_signal = best.doc_frequency / max(1, max_doc_frequency)
+        return extraction_conf, agreement, rank_signal, frequency_signal
+
+    @staticmethod
+    def _compute_type_and_bonus(
+        best: AnswerCandidate,
+        candidates: list[AnswerCandidate],
+        lat_qids: list[str],
+        enable_type_coercion: bool,
+        enable_answer_merging: bool,
+        enable_question_type_bonus: bool,
+        question_type: str,
+    ) -> tuple[str | None, float, float]:
+        best_qid = (
+            resolve_span_to_qid(best.span)
+            if enable_type_coercion or enable_answer_merging
+            else None
+        )
+        type_signal = (
+            score_type_coercion(candidates, lat_qids, candidate_qid=best_qid)
+            if enable_type_coercion
+            else 0.0
+        )
+        qt_bonus = (
+            _question_type_bonus(best.span, question_type)
+            if enable_question_type_bonus
+            else 0.0
+        )
+        if (
+            enable_question_type_bonus
+            and enable_type_coercion
+            and lat_qids
+            and type_signal == 0.0
+        ):
+            qt_bonus = 0.0
+        return best_qid, type_signal, qt_bonus
+
+    @staticmethod
+    def _compute_consistency_signals(
+        candidates: list[AnswerCandidate],
+        graph_results: list[GraphResult],
+        enable_consistency: bool,
+    ) -> tuple[float, float]:
+        temporal = (
+            score_temporal_consistency(candidates, graph_results)
+            if enable_consistency
+            else 0.0
+        )
+        geo = (
+            score_geospatial_consistency(candidates, graph_results)
+            if enable_consistency
+            else 0.0
+        )
+        return temporal, geo
+
+    @staticmethod
+    def _compute_term_match_signal(
+        question: str,
+        ranked_passages: list[RankedPassage] | None,
+        enable_term_match: bool,
+    ) -> float:
+        return (
+            score_term_match(question, ranked_passages)
+            if enable_term_match and ranked_passages
+            else 0.0
+        )
+
+    def _compute_all_signals(
+        self,
+        best: AnswerCandidate,
+        candidates: list[AnswerCandidate],
+        graph_results: list[GraphResult],
+        question_type: str,
+        lat_qids: list[str],
+        question: str,
+        ranked_passages: list[RankedPassage] | None,
+        enable_type_coercion: bool,
+        enable_answer_merging: bool,
+        enable_question_type_bonus: bool,
+        enable_term_match: bool,
+        enable_consistency: bool,
+        bidirectional_signal: float,
+    ) -> dict[str, Any]:
+        extraction_conf, agreement, rank_signal, frequency_signal = (
+            self._compute_base_signals(best, candidates)
+        )
+        graph_corroborated, graph_facts_used = self._compute_graph_signals(
+            best, graph_results
+        )
+        best_qid, type_signal, qt_bonus = self._compute_type_and_bonus(
+            best,
+            candidates,
+            lat_qids,
+            enable_type_coercion,
+            enable_answer_merging,
+            enable_question_type_bonus,
+            question_type,
+        )
+        term_match_signal = self._compute_term_match_signal(
+            question, ranked_passages, enable_term_match
+        )
+        temporal_signal, geo_signal = self._compute_consistency_signals(
+            candidates, graph_results, enable_consistency
+        )
+        return {
+            "extraction_conf": extraction_conf,
+            "agreement": agreement,
+            "rank_signal": rank_signal,
+            "frequency_signal": frequency_signal,
+            "graph_signal": 0.2 if graph_corroborated else 0.0,
+            "graph_facts_used": graph_facts_used,
+            "best_qid": best_qid,
+            "type_signal": type_signal,
+            "qt_bonus": qt_bonus,
+            "term_match_signal": term_match_signal,
+            "temporal_signal": temporal_signal,
+            "geo_signal": geo_signal,
+            "bidirectional_signal": bidirectional_signal,
+            "evidence_chain": self._build_evidence_chain(
+                candidates, graph_facts_used, best.span
+            ),
+        }
+
+    @staticmethod
+    def _compute_final_confidence(
+        lat_qids: list[str] | None,
+        enable_type_coercion: bool,
+        signals: dict[str, Any],
+    ) -> float:
+        confidence = round(
+            min(
+                0.30 * signals["extraction_conf"]
+                + 0.10 * signals["agreement"]
+                + 0.15 * signals["graph_signal"]
+                + 0.10 * signals["rank_signal"]
+                + signals["qt_bonus"]
+                + 0.15 * signals["type_signal"]
+                + 0.10 * signals["term_match_signal"]
+                + 0.05 * signals["temporal_signal"]
+                + 0.05 * signals["geo_signal"]
+                + 0.05 * signals["frequency_signal"]
+                + 0.05 * signals["bidirectional_signal"],
+                1.0,
+            ),
+            3,
+        )
+        if (
+            lat_qids
+            and enable_type_coercion
+            and signals["type_signal"] == 0.0
+            and signals["best_qid"] is not None
+        ):
+            confidence = round(confidence * 0.3, 3)
+        return confidence
+
+    @staticmethod
+    def _build_score_answer(
+        best: AnswerCandidate,
+        candidates: list[AnswerCandidate],
+        signals: dict[str, Any],
+        confidence: float,
+    ) -> FinalAnswer:
+        return FinalAnswer(
+            answer=best.span,
+            confidence=confidence,
+            source=best.source,
+            url=best.url,
+            supporting_passages=[c.passage[:200] for c in candidates[:3]],
+            graph_facts=signals["graph_facts_used"][:5],
+            confidence_breakdown={
+                "extraction_model": round(signals["extraction_conf"], 3),
+                "span_agreement": round(signals["agreement"], 3),
+                "graph_corroboration": signals["graph_signal"],
+                "passage_rank_signal": round(signals["rank_signal"], 3),
+                "question_type_bonus": signals["qt_bonus"],
+                "type_coercion": signals["type_signal"],
+                "term_match": round(signals["term_match_signal"], 3),
+                "temporal_consistency": signals["temporal_signal"],
+                "geospatial_consistency": signals["geo_signal"],
+                "frequency_signal": round(signals["frequency_signal"], 3),
+                "bidirectional_signal": round(signals["bidirectional_signal"], 3),
+            },
+            evidence_chain=signals["evidence_chain"],
+        )
+
     def score(  # pylint: disable=too-many-arguments
         self,
         candidates: list[AnswerCandidate],
@@ -202,120 +411,22 @@ class ConfidenceScorer:
             candidates = merge_candidates_by_qid(candidates)
 
         best = candidates[0]
-
-        extraction_conf = best.extraction_score
-
-        spans = [c.span.lower().strip() for c in candidates]
-        agreement = spans.count(best.span.lower().strip()) / len(spans)
-
-        graph_corroborated = False
-        graph_facts_used = []
-        for gr in graph_results:
-            for fact in gr.facts:
-                if (
-                    best.span.lower() in fact.value.lower()
-                    or fact.value.lower() in best.span.lower()
-                ):
-                    graph_corroborated = True
-                    graph_facts_used.append(f"{fact.property_label}: {fact.value}")
-
-        graph_signal = 0.2 if graph_corroborated else 0.0
-
-        rank_signal = max(0.0, 1.0 - (best.rank - 1) * 0.1)
-        max_doc_frequency = max(c.doc_frequency for c in candidates)
-        frequency_signal = best.doc_frequency / max(1, max_doc_frequency)
-
-        best_qid = (
-            resolve_span_to_qid(best.span)
-            if enable_type_coercion or enable_answer_merging
-            else None
+        signals = self._compute_all_signals(
+            best,
+            candidates,
+            graph_results,
+            question_type,
+            lat_qids or [],
+            question,
+            ranked_passages,
+            enable_type_coercion,
+            enable_answer_merging,
+            enable_question_type_bonus,
+            enable_term_match,
+            enable_consistency,
+            bidirectional_signal,
         )
-
-        type_signal = (
-            score_type_coercion(candidates, lat_qids or [], candidate_qid=best_qid)
-            if enable_type_coercion
-            else 0.0
+        confidence = self._compute_final_confidence(
+            lat_qids, enable_type_coercion, signals
         )
-
-        qt_bonus = (
-            _question_type_bonus(best.span, question_type)
-            if enable_question_type_bonus
-            else 0.0
-        )
-        if (
-            enable_question_type_bonus
-            and enable_type_coercion
-            and lat_qids
-            and type_signal == 0.0
-        ):
-            qt_bonus = 0.0
-
-        term_match_signal = (
-            score_term_match(question, ranked_passages)
-            if enable_term_match and ranked_passages
-            else 0.0
-        )
-
-        temporal_signal = (
-            score_temporal_consistency(candidates, graph_results)
-            if enable_consistency
-            else 0.0
-        )
-        geo_signal = (
-            score_geospatial_consistency(candidates, graph_results)
-            if enable_consistency
-            else 0.0
-        )
-
-        evidence_chain = self._build_evidence_chain(
-            candidates, graph_facts_used, best.span
-        )
-
-        confidence = (
-            # Weights are intentionally allowed to sum slightly above 1.0 when
-            # all signals fire simultaneously; min(confidence, 1.0) clamps the
-            # final value.  Typical questions activate only a subset of signals.
-            0.30 * extraction_conf
-            + 0.10 * agreement
-            + 0.15 * graph_signal
-            + 0.10 * rank_signal
-            + qt_bonus
-            + 0.15 * type_signal
-            + 0.10 * term_match_signal
-            + 0.05 * temporal_signal
-            + 0.05 * geo_signal
-            + 0.05 * frequency_signal
-            + 0.05 * bidirectional_signal
-        )
-        confidence = round(min(confidence, 1.0), 3)
-
-        if (
-            lat_qids
-            and enable_type_coercion
-            and type_signal == 0.0
-            and best_qid is not None
-        ):
-            confidence = round(confidence * 0.3, 3)
-
-        return FinalAnswer(
-            answer=best.span,
-            confidence=confidence,
-            source=best.source,
-            url=best.url,
-            supporting_passages=[c.passage[:200] for c in candidates[:3]],
-            graph_facts=graph_facts_used[:5],
-            confidence_breakdown={
-                "extraction_model": round(extraction_conf, 3),
-                "span_agreement": round(agreement, 3),
-                "graph_corroboration": graph_signal,
-                "passage_rank_signal": round(rank_signal, 3),
-                "question_type_bonus": qt_bonus,
-                "type_coercion": type_signal,
-                "term_match": round(term_match_signal, 3),
-                "temporal_consistency": temporal_signal,
-                "geospatial_consistency": geo_signal,
-                "frequency_signal": round(frequency_signal, 3),
-                "bidirectional_signal": round(bidirectional_signal, 3),
-            },
-            evidence_chain=evidence_chain,
-        )
+        return self._build_score_answer(best, candidates, signals, confidence)

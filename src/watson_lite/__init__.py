@@ -1,4 +1,4 @@
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 from watson_lite.core.config import FeatureConfig
 from watson_lite.core.models import (

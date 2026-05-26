@@ -370,9 +370,7 @@ class WatsonLite:
             bidirectional_signal=bidirectional_signal,
         )
 
-    def answer(  # pylint: disable=too-many-statements,too-many-locals
-        self, question: str, verbose: bool = True
-    ) -> FinalAnswer:
+    def answer(self, question: str, verbose: bool = True) -> FinalAnswer:
         if not question:
             raise ValueError("question must not be empty")
 
@@ -392,13 +390,7 @@ class WatsonLite:
 
         self._log_step(verbose, 2, "Parallel retrieval (BM25 + Vector)...")
         stage_t0 = time.perf_counter()
-        queries = (
-            generate_search_queries(
-                parsed, augment_context=self.config.query_context_augmentation
-            )
-            if self.config.query_expansion
-            else [parsed.raw]
-        )
+        queries = self._generate_queries(parsed)
         self._log_detail(verbose, "Search queries: %s", queries)
 
         all_passages: list[Passage] = []
@@ -409,18 +401,7 @@ class WatsonLite:
                 )
             )
 
-        entity_names = [str(entity["text"]) for entity in parsed.entities]
-        if not entity_names:
-            _question_words = frozenset(
-                {"who", "what", "when", "where", "why", "how", "whom", "whose"}
-            )
-            nps = [
-                nc
-                for nc in parsed.noun_chunks
-                if nc.lower().strip() not in _question_words
-            ]
-            if nps:
-                entity_names = [max(nps, key=len)]
+        entity_names = self._resolve_entity_names(parsed)
         if entity_names:
             self._log_detail(verbose, "Entity direct page fetch: %s", entity_names)
             for entity_text in entity_names:
@@ -429,32 +410,7 @@ class WatsonLite:
         passages = self._dedupe_passages(all_passages)
 
         if not passages:
-            total_latency = round(time.perf_counter() - t0, 4)
-            cache_after = get_cache_metrics_snapshot()
-            cache_hits, cache_misses, hits_by_ns, misses_by_ns = (
-                self._cache_metrics_delta(cache_before, cache_after)
-            )
-            return FinalAnswer(
-                answer="Could not retrieve relevant passages.",
-                confidence=0.0,
-                source="",
-                url="",
-                diagnostics=AnswerDiagnostics(
-                    total_latency_s=total_latency,
-                    stage_latencies_s=stage_latencies,
-                    passages_fetched=0,
-                    passages_reranked=0,
-                    passages_extracted=0,
-                    retrieval_empty=True,
-                    extraction_errors=0,
-                    fallback_answer=True,
-                    cache_hits=cache_hits,
-                    cache_misses=cache_misses,
-                    cache_hits_by_namespace=hits_by_ns,
-                    cache_misses_by_namespace=misses_by_ns,
-                    top_retrieved_passages=[],
-                ),
-            )
+            return self._build_empty_answer(t0, stage_latencies, cache_before)
 
         passages_fetched = len(passages)
         passage_hash = _passages_hash(passages)
@@ -579,6 +535,63 @@ class WatsonLite:
             self._print_answer(answer, total_latency)
 
         return answer
+
+    def _generate_queries(self, parsed: ParsedQuestion) -> list[str]:
+        return (
+            generate_search_queries(
+                parsed, augment_context=self.config.query_context_augmentation
+            )
+            if self.config.query_expansion
+            else [parsed.raw]
+        )
+
+    def _resolve_entity_names(self, parsed: ParsedQuestion) -> list[str]:
+        entity_names = [str(entity["text"]) for entity in parsed.entities]
+        if not entity_names:
+            _question_words = frozenset(
+                {"who", "what", "when", "where", "why", "how", "whom", "whose"}
+            )
+            nps = [
+                nc
+                for nc in parsed.noun_chunks
+                if nc.lower().strip() not in _question_words
+            ]
+            if nps:
+                entity_names = [max(nps, key=len)]
+        return entity_names
+
+    def _build_empty_answer(
+        self,
+        t0: float,
+        stage_latencies: dict[str, float],
+        cache_before: CacheMetrics,
+    ) -> FinalAnswer:
+        total_latency = round(time.perf_counter() - t0, 4)
+        cache_after = get_cache_metrics_snapshot()
+        cache_hits, cache_misses, hits_by_ns, misses_by_ns = self._cache_metrics_delta(
+            cache_before, cache_after
+        )
+        return FinalAnswer(
+            answer="Could not retrieve relevant passages.",
+            confidence=0.0,
+            source="",
+            url="",
+            diagnostics=AnswerDiagnostics(
+                total_latency_s=total_latency,
+                stage_latencies_s=stage_latencies,
+                passages_fetched=0,
+                passages_reranked=0,
+                passages_extracted=0,
+                retrieval_empty=True,
+                extraction_errors=0,
+                fallback_answer=True,
+                cache_hits=cache_hits,
+                cache_misses=cache_misses,
+                cache_hits_by_namespace=hits_by_ns,
+                cache_misses_by_namespace=misses_by_ns,
+                top_retrieved_passages=[],
+            ),
+        )
 
     def _run_iterative_retrieval(
         self,
