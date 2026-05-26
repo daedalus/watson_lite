@@ -116,7 +116,7 @@ def _is_failure(answer: FinalAnswer) -> bool:
     diagnostics = answer.diagnostics
     if diagnostics is None:
         return False
-    return diagnostics.retrieval_empty or diagnostics.extraction_errors > 0
+    return bool(diagnostics.retrieval_empty) or diagnostics.extraction_errors > 0
 
 
 def _average_passage_metric(
@@ -165,9 +165,8 @@ def _bernoulli_kl_divergence(
 ) -> float:
     observed = _clip_probability(observed, epsilon)
     predicted = _clip_probability(predicted, epsilon)
-    return (
-        observed * math.log(observed / predicted)
-        + (1.0 - observed) * math.log((1.0 - observed) / (1.0 - predicted))
+    return observed * math.log(observed / predicted) + (1.0 - observed) * math.log(
+        (1.0 - observed) / (1.0 - predicted)
     )
 
 

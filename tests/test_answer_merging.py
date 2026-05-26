@@ -1,4 +1,5 @@
 """Tests for answer merging by Wikidata QID."""
+
 import pytest
 from unittest.mock import patch
 

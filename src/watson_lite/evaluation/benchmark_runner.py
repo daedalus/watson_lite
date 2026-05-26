@@ -23,7 +23,11 @@ from watson_lite.evaluation.kpis import (
 )
 from watson_lite.pipeline import WatsonLite
 
-_CACHE_DB = Path(__file__).resolve().parent.parent.parent.parent / "benchmarks" / ".answer_cache.sqlite3"
+_CACHE_DB = (
+    Path(__file__).resolve().parent.parent.parent.parent
+    / "benchmarks"
+    / ".answer_cache.sqlite3"
+)
 _ANSWER_CACHE: Cache | None = None
 
 
@@ -169,9 +173,7 @@ def _run_profile(
             )
         )
 
-        em = max(
-            exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers
-        )
+        em = max(exact_match(ans.answer, ref, normalize_fn) for ref in sample.answers)
         f1 = max(token_f1(ans.answer, ref, normalize_fn) for ref in sample.answers)
         q = sample.question[:80] + ("…" if len(sample.question) > 80 else "")
         a = ans.answer[:60] + ("…" if len(ans.answer) > 60 else "")

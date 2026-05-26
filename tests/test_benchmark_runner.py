@@ -67,7 +67,9 @@ def test_run_benchmark_profiles_outputs_files(tmp_path: Path) -> None:
 
     with (
         patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-        patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        patch(
+            "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+        ) as mock_cache,
     ):
         mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_br1.sqlite3"))
         results, regressions = run_benchmark_profiles(
@@ -119,7 +121,9 @@ def test_run_benchmark_profiles_detects_regression(tmp_path: Path) -> None:
 
     with (
         patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-        patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        patch(
+            "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+        ) as mock_cache,
     ):
         mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_br2.sqlite3"))
         _, regressions = run_benchmark_profiles(
