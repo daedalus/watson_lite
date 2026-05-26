@@ -64,6 +64,8 @@ def _make_kpi_report(
     f1: float = 1.0,
     recall: float = 1.0,
     latency_p95: float = 0.5,
+    calibration_kl: float = 0.0,
+    calibration_jsd: float = 0.0,
 ) -> KPIReport:
     return KPIReport(
         total_questions=1,
@@ -80,12 +82,20 @@ def _make_kpi_report(
         exact_match=em,
         f1=f1,
         confidence_calibration_ece=0.0,
-        confidence_calibration_kl_divergence=0.0,
-        confidence_calibration_js_divergence=0.0,
+        confidence_calibration_kl_divergence=calibration_kl,
+        confidence_calibration_js_divergence=calibration_jsd,
         retrieval_recall_at_k=recall,
         average_passages_fetched=1.0,
         average_passages_reranked=1.0,
         average_passages_extracted=1.0,
+    )
+
+
+def _baseline_result(**kwargs: Any) -> BenchmarkProfileResult:
+    return BenchmarkProfileResult(
+        profile="baseline",
+        config=FeatureConfig.baseline(),
+        report=_make_kpi_report(**kwargs),
     )
 
 
@@ -435,7 +445,7 @@ class TestRegressionDetection:
     # _check_regressions — no issues ----------------------------------------
 
     def test_no_regression_when_metrics_are_within_threshold(self) -> None:
-        baseline = _make_kpi_report(accuracy=0.9, em=0.9, f1=0.9, recall=0.9)
+        baseline = _baseline_result(accuracy=0.9, em=0.9, f1=0.9, recall=0.9)
         current = BenchmarkProfileResult(
             profile="p",
             config=FeatureConfig.baseline(),
@@ -451,16 +461,14 @@ class TestRegressionDetection:
         assert _check_regressions(baseline, current, thresholds) == []
 
     def test_no_regression_when_metrics_equal_baseline(self) -> None:
-        report = _make_kpi_report()
+        baseline = _baseline_result()
         current = BenchmarkProfileResult(
-            profile="p", config=FeatureConfig.baseline(), report=report
+            profile="p", config=FeatureConfig.baseline(), report=_make_kpi_report()
         )
-        assert _check_regressions(report, current, RegressionThresholds()) == []
-
-    # _check_regressions — metric drops -------------------------------------
+        assert _check_regressions(baseline, current, RegressionThresholds()) == []
 
     def test_detects_accuracy_drop(self) -> None:
-        baseline = _make_kpi_report(accuracy=1.0)
+        baseline = _baseline_result(accuracy=1.0)
         current = BenchmarkProfileResult(
             profile="bad",
             config=FeatureConfig.minimal(),
@@ -476,7 +484,7 @@ class TestRegressionDetection:
         assert acc_issues[0]["drop"] == pytest.approx(0.5)
 
     def test_detects_exact_match_drop(self) -> None:
-        baseline = _make_kpi_report(em=1.0)
+        baseline = _baseline_result(em=1.0)
         current = BenchmarkProfileResult(
             profile="p",
             config=FeatureConfig.minimal(),
@@ -490,7 +498,7 @@ class TestRegressionDetection:
         assert any(i["metric"] == "exact_match" for i in issues)
 
     def test_detects_f1_drop(self) -> None:
-        baseline = _make_kpi_report(f1=1.0)
+        baseline = _baseline_result(f1=1.0)
         current = BenchmarkProfileResult(
             profile="p",
             config=FeatureConfig.minimal(),
@@ -504,7 +512,7 @@ class TestRegressionDetection:
         assert any(i["metric"] == "f1" for i in issues)
 
     def test_detects_recall_drop(self) -> None:
-        baseline = _make_kpi_report(recall=1.0)
+        baseline = _baseline_result(recall=1.0)
         current = BenchmarkProfileResult(
             profile="p",
             config=FeatureConfig.minimal(),
@@ -517,10 +525,8 @@ class TestRegressionDetection:
         )
         assert any(i["metric"] == "retrieval_recall_at_k" for i in issues)
 
-    # _check_regressions — latency ------------------------------------------
-
     def test_detects_latency_regression(self) -> None:
-        baseline = _make_kpi_report(latency_p95=0.5)
+        baseline = _baseline_result(latency_p95=0.5)
         current = BenchmarkProfileResult(
             profile="slow",
             config=FeatureConfig.baseline(),
@@ -532,7 +538,7 @@ class TestRegressionDetection:
         assert len(latency_issues) == 1
 
     def test_no_latency_regression_when_threshold_is_none(self) -> None:
-        baseline = _make_kpi_report(latency_p95=0.1)
+        baseline = _baseline_result(latency_p95=0.1)
         current = BenchmarkProfileResult(
             profile="p",
             config=FeatureConfig.baseline(),
@@ -544,7 +550,7 @@ class TestRegressionDetection:
         assert not any(i["metric"] == "latency_p95_s" for i in issues)
 
     def test_no_latency_regression_when_within_threshold(self) -> None:
-        baseline = _make_kpi_report(latency_p95=1.0)
+        baseline = _baseline_result(latency_p95=1.0)
         current = BenchmarkProfileResult(
             profile="p",
             config=FeatureConfig.baseline(),
@@ -556,6 +562,151 @@ class TestRegressionDetection:
             RegressionThresholds(max_latency_p95_s=2.0, metric_tolerance=0.001),
         )
         assert not any(i["metric"] == "latency_p95_s" for i in issues)
+
+    # _check_regressions — calibration divergence ---------------------------
+
+    def test_detects_calibration_kl_increase(self) -> None:
+        baseline = _baseline_result(calibration_kl=0.01)
+        current = BenchmarkProfileResult(
+            profile="bad_cal",
+            config=FeatureConfig.minimal(),
+            report=_make_kpi_report(calibration_kl=0.5),
+        )
+        issues = _check_regressions(
+            baseline,
+            current,
+            RegressionThresholds(
+                max_calibration_kl_increase=0.0, metric_tolerance=0.0
+            ),
+        )
+        assert any(
+            i["metric"] == "confidence_calibration_kl_divergence" for i in issues
+        )
+
+    def test_detects_calibration_jsd_increase(self) -> None:
+        baseline = _baseline_result(calibration_jsd=0.01)
+        current = BenchmarkProfileResult(
+            profile="bad_cal",
+            config=FeatureConfig.minimal(),
+            report=_make_kpi_report(calibration_jsd=0.5),
+        )
+        issues = _check_regressions(
+            baseline,
+            current,
+            RegressionThresholds(
+                max_calibration_jsd_increase=0.0, metric_tolerance=0.0
+            ),
+        )
+        assert any(
+            i["metric"] == "confidence_calibration_js_divergence" for i in issues
+        )
+
+    def test_no_calibration_regression_when_threshold_none(self) -> None:
+        baseline = _baseline_result(calibration_kl=0.01)
+        current = BenchmarkProfileResult(
+            profile="p",
+            config=FeatureConfig.baseline(),
+            report=_make_kpi_report(calibration_kl=0.5),
+        )
+        issues = _check_regressions(
+            baseline,
+            current,
+            RegressionThresholds(max_calibration_kl_increase=None),
+        )
+        assert not any(
+            i["metric"] == "confidence_calibration_kl_divergence" for i in issues
+        )
+
+    # _check_regressions — distribution divergence --------------------------
+
+    def test_detects_f1_distribution_kl_regression(self) -> None:
+        baseline = BenchmarkProfileResult(
+            profile="baseline",
+            config=FeatureConfig.baseline(),
+            report=_make_kpi_report(),
+            answers_with_metrics=[
+                {"f1": 1.0, "confidence": 0.9},
+                {"f1": 1.0, "confidence": 0.9},
+                {"f1": 1.0, "confidence": 0.9},
+                {"f1": 0.0, "confidence": 0.3},
+            ],
+        )
+        current = BenchmarkProfileResult(
+            profile="bad_dist",
+            config=FeatureConfig.minimal(),
+            report=_make_kpi_report(f1=0.5),
+            answers_with_metrics=[
+                {"f1": 0.0, "confidence": 0.9},
+                {"f1": 0.0, "confidence": 0.9},
+                {"f1": 0.0, "confidence": 0.9},
+                {"f1": 1.0, "confidence": 0.3},
+            ],
+        )
+        issues = _check_regressions(
+            baseline,
+            current,
+            RegressionThresholds(
+                max_f1_distribution_kl=0.0, metric_tolerance=0.0
+            ),
+        )
+        assert any(
+            i["metric"] == "f1_distribution_kl_divergence" for i in issues
+        )
+
+    def test_no_distribution_regression_when_threshold_none(self) -> None:
+        baseline = BenchmarkProfileResult(
+            profile="baseline",
+            config=FeatureConfig.baseline(),
+            report=_make_kpi_report(),
+            answers_with_metrics=[
+                {"f1": 1.0, "confidence": 0.9},
+            ],
+        )
+        current = BenchmarkProfileResult(
+            profile="p",
+            config=FeatureConfig.minimal(),
+            report=_make_kpi_report(),
+            answers_with_metrics=[
+                {"f1": 0.0, "confidence": 0.9},
+            ],
+        )
+        issues = _check_regressions(
+            baseline,
+            current,
+            RegressionThresholds(max_f1_distribution_kl=None),
+        )
+        assert not any(
+            i["metric"] == "f1_distribution_kl_divergence" for i in issues
+        )
+
+    def test_identical_distributions_have_no_divergence_regression(self) -> None:
+        metrics = [
+            {"f1": 1.0, "confidence": 0.9},
+            {"f1": 0.5, "confidence": 0.6},
+        ]
+        baseline = BenchmarkProfileResult(
+            profile="baseline",
+            config=FeatureConfig.baseline(),
+            report=_make_kpi_report(),
+            answers_with_metrics=list(metrics),
+        )
+        current = BenchmarkProfileResult(
+            profile="p",
+            config=FeatureConfig.minimal(),
+            report=_make_kpi_report(),
+            answers_with_metrics=list(metrics),
+        )
+        issues = _check_regressions(
+            baseline,
+            current,
+            RegressionThresholds(
+                max_f1_distribution_kl=0.0, max_f1_distribution_jsd=0.0,
+                metric_tolerance=0.001,
+            ),
+        )
+        assert not any(
+            "distribution" in i["metric"] for i in issues
+        )
 
     # regression_check injects baseline -------------------------------------
 

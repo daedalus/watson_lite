@@ -191,6 +191,75 @@ def _calibration_bucket(confidence: float, bins: int) -> int:
     return min(int(confidence * bins), bins - 1)
 
 
+def _histogram_shared_range(
+    p_values: list[float],
+    q_values: list[float],
+) -> tuple[float, float]:
+    all_values = [v for v in p_values if v is not None] + [
+        v for v in q_values if v is not None
+    ]
+    if not all_values:
+        return 0.0, 1.0
+    lo = min(all_values)
+    hi = max(all_values)
+    if hi - lo < 1e-12:
+        hi = lo + 1.0
+    return lo, hi
+
+
+def _normalized_histogram(
+    values: list[float],
+    lo: float,
+    hi: float,
+    bins: int,
+) -> list[float]:
+    cleaned = [v for v in values if v is not None]
+    if not cleaned:
+        return [1.0 / bins] * bins
+    bin_count = [0.0] * bins
+    for v in cleaned:
+        idx = min(int((v - lo) / (hi - lo) * bins), bins - 1)
+        bin_count[idx] += 1.0
+    bin_count = [c + 1.0 for c in bin_count]
+    total = sum(bin_count)
+    return [c / total for c in bin_count]
+
+
+def _histogram_kl_divergence(
+    p_values: list[float],
+    q_values: list[float],
+    bins: int = 20,
+) -> float:
+    lo, hi = _histogram_shared_range(p_values, q_values)
+    p_hist = _normalized_histogram(p_values, lo, hi, bins)
+    q_hist = _normalized_histogram(q_values, lo, hi, bins)
+    kl = 0.0
+    for pi, qi in zip(p_hist, q_hist):
+        if pi > 0 and qi > 0:
+            kl += pi * math.log(pi / qi)
+    return kl
+
+
+def _histogram_js_divergence(
+    p_values: list[float],
+    q_values: list[float],
+    bins: int = 20,
+) -> float:
+    lo, hi = _histogram_shared_range(p_values, q_values)
+    p_hist = _normalized_histogram(p_values, lo, hi, bins)
+    q_hist = _normalized_histogram(q_values, lo, hi, bins)
+    m = [(a + b) * 0.5 for a, b in zip(p_hist, q_hist)]
+    kl_pm = 0.0
+    kl_qm = 0.0
+    for pi, mi in zip(p_hist, m):
+        if pi > 0 and mi > 0:
+            kl_pm += pi * math.log(pi / mi)
+    for qi, mi in zip(q_hist, m):
+        if qi > 0 and mi > 0:
+            kl_qm += qi * math.log(qi / mi)
+    return (kl_pm + kl_qm) * 0.5
+
+
 def _recall_hit(retrieved: list[str], evidence_passages: list[str], top_k: int) -> bool:
     if not evidence_passages:
         return False

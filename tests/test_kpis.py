@@ -1,7 +1,14 @@
+import math
+
 import pytest
 
 from watson_lite.core.models import AnswerDiagnostics, FinalAnswer
-from watson_lite.evaluation.kpis import BenchmarkLabel, evaluate_kpis
+from watson_lite.evaluation.kpis import (
+    BenchmarkLabel,
+    _histogram_js_divergence,
+    _histogram_kl_divergence,
+    evaluate_kpis,
+)
 
 
 def _answer(
@@ -169,3 +176,42 @@ class TestKPIEvaluation:
         assert report.average_passages_fetched == 12.0
         assert report.average_passages_reranked == 10.0
         assert report.average_passages_extracted == 5.0
+
+
+class TestHistogramDivergence:
+    def test_identical_distributions_have_zero_divergence(self) -> None:
+        values = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        assert _histogram_kl_divergence(values, values) == pytest.approx(0.0, abs=1e-10)
+        assert _histogram_js_divergence(values, values) == pytest.approx(0.0, abs=1e-10)
+
+    def test_completely_separate_distributions(self) -> None:
+        p_vals = [0.1, 0.1, 0.1, 0.1, 0.1]
+        q_vals = [0.9, 0.9, 0.9, 0.9, 0.9]
+        kl = _histogram_kl_divergence(p_vals, q_vals)
+        jsd = _histogram_js_divergence(p_vals, q_vals)
+        assert kl > 0.0
+        assert jsd > 0.0
+        assert jsd < kl
+
+    def test_confidence_shift_detected(self) -> None:
+        well_calibrated = [0.9, 0.8, 0.85, 0.95, 0.7]
+        overconfident = [0.99, 0.98, 0.97, 0.99, 0.96]
+        kl = _histogram_kl_divergence(well_calibrated, overconfident)
+        assert kl > 0.0
+
+    def test_divergence_symmetric_for_jsd_not_kl(self) -> None:
+        p_vals = [0.1] * 200
+        q_vals = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] * 25
+        kl_pq = _histogram_kl_divergence(p_vals, q_vals)
+        kl_qp = _histogram_kl_divergence(q_vals, p_vals)
+        jsd_pq = _histogram_js_divergence(p_vals, q_vals)
+        jsd_qp = _histogram_js_divergence(q_vals, p_vals)
+        assert abs(kl_pq - kl_qp) > 0.01
+        assert jsd_pq == pytest.approx(jsd_qp, abs=1e-10)
+
+    def test_empty_list_returns_finite_value(self) -> None:
+        assert _histogram_kl_divergence([], [0.1, 0.2]) >= 0.0
+        assert _histogram_js_divergence([], [0.1, 0.2]) >= 0.0
+
+    def test_single_value_distribution(self) -> None:
+        assert _histogram_kl_divergence([0.5], [0.5]) == pytest.approx(0.0, abs=1e-10)

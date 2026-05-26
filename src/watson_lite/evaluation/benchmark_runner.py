@@ -14,6 +14,8 @@ from watson_lite.evaluation.kpis import (
     BenchmarkLabel,
     KPIReport,
     NormalizeFn,
+    _histogram_js_divergence,
+    _histogram_kl_divergence,
     evaluate_kpis,
     exact_match,
     normalize_nq_open,
@@ -72,6 +74,10 @@ class RegressionThresholds:
     max_recall_drop: float = 0.02
     metric_tolerance: float = 0.001
     max_latency_p95_s: float | None = None
+    max_calibration_kl_increase: float | None = None
+    max_calibration_jsd_increase: float | None = None
+    max_f1_distribution_kl: float | None = None
+    max_f1_distribution_jsd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -161,11 +167,11 @@ def _run_profile(
         cached = cache.get_or_sentinel(key)
         if cached is not SENTINEL:
             ans = _deserialize_answer(cached)
-            tag = "HIT"
+            tag = "cache/HIT"
         else:
             ans = watson.answer(sample.question, verbose=False)
             cache.set(key, _serialize_answer(ans))
-            tag = "MISS"
+            tag = "cache/MISS"
 
         answers.append(ans)
         labels.append(
@@ -226,22 +232,23 @@ def _metric_drop(
     return baseline_value - value
 
 
-def _check_regressions(
-    baseline: KPIReport,
+def _check_regressions(  # pylint: disable=too-many-branches
+    baseline: BenchmarkProfileResult,
     current: BenchmarkProfileResult,
     thresholds: RegressionThresholds,
 ) -> list[dict[str, float | str]]:
-    report = current.report
+    br = baseline.report
+    cr = current.report
     issues: list[dict[str, float | str]] = []
-    checks = (
+    metric_checks = (
         ("accuracy_at_1", thresholds.max_accuracy_drop),
         ("exact_match", thresholds.max_exact_match_drop),
         ("f1", thresholds.max_f1_drop),
         ("retrieval_recall_at_k", thresholds.max_recall_drop),
     )
-    for metric, max_drop in checks:
-        base_value = float(getattr(baseline, metric, 0.0) or 0.0)
-        value = float(getattr(report, metric, 0.0) or 0.0)
+    for metric, max_drop in metric_checks:
+        base_value = float(getattr(br, metric, 0.0) or 0.0)
+        value = float(getattr(cr, metric, 0.0) or 0.0)
         drop = _metric_drop(base_value, value)
         if drop - max_drop > thresholds.metric_tolerance:
             issues.append(
@@ -254,21 +261,126 @@ def _check_regressions(
                     "max_drop": max_drop,
                 }
             )
+
     if (
         thresholds.max_latency_p95_s is not None
-        and report.latency_p95_s - thresholds.max_latency_p95_s
+        and cr.latency_p95_s - thresholds.max_latency_p95_s
         > thresholds.metric_tolerance
     ):
         issues.append(
             {
                 "profile": current.profile,
                 "metric": "latency_p95_s",
-                "baseline": baseline.latency_p95_s,
-                "current": report.latency_p95_s,
+                "baseline": br.latency_p95_s,
+                "current": cr.latency_p95_s,
                 "drop": 0.0,
                 "max_drop": thresholds.max_latency_p95_s,
             }
         )
+
+    if (
+        thresholds.max_calibration_kl_increase is not None
+        and cr.confidence_calibration_kl_divergence is not None
+        and br.confidence_calibration_kl_divergence is not None
+    ):
+        increase = (
+            cr.confidence_calibration_kl_divergence
+            - br.confidence_calibration_kl_divergence
+        )
+        if increase - thresholds.max_calibration_kl_increase > thresholds.metric_tolerance:
+            issues.append(
+                {
+                    "profile": current.profile,
+                    "metric": "confidence_calibration_kl_divergence",
+                    "baseline": br.confidence_calibration_kl_divergence,
+                    "current": cr.confidence_calibration_kl_divergence,
+                    "drop": increase,
+                    "max_drop": thresholds.max_calibration_kl_increase,
+                }
+            )
+
+    if (
+        thresholds.max_calibration_jsd_increase is not None
+        and cr.confidence_calibration_js_divergence is not None
+        and br.confidence_calibration_js_divergence is not None
+    ):
+        increase = (
+            cr.confidence_calibration_js_divergence
+            - br.confidence_calibration_js_divergence
+        )
+        if increase - thresholds.max_calibration_jsd_increase > thresholds.metric_tolerance:
+            issues.append(
+                {
+                    "profile": current.profile,
+                    "metric": "confidence_calibration_js_divergence",
+                    "baseline": br.confidence_calibration_js_divergence,
+                    "current": cr.confidence_calibration_js_divergence,
+                    "drop": increase,
+                    "max_drop": thresholds.max_calibration_jsd_increase,
+                }
+            )
+
+    baseline_f1 = [a["f1"] for a in baseline.answers_with_metrics]
+    current_f1 = [a["f1"] for a in current.answers_with_metrics]
+    baseline_conf = [a["confidence"] for a in baseline.answers_with_metrics]
+    current_conf = [a["confidence"] for a in current.answers_with_metrics]
+
+    if baseline_f1 and current_f1:
+        if thresholds.max_f1_distribution_kl is not None:
+            f1_kl = _histogram_kl_divergence(baseline_f1, current_f1)
+            if f1_kl - thresholds.max_f1_distribution_kl > thresholds.metric_tolerance:
+                issues.append(
+                    {
+                        "profile": current.profile,
+                        "metric": "f1_distribution_kl_divergence",
+                        "baseline": 0.0,
+                        "current": f1_kl,
+                        "drop": f1_kl,
+                        "max_drop": thresholds.max_f1_distribution_kl,
+                    }
+                )
+        if thresholds.max_f1_distribution_jsd is not None:
+            f1_jsd = _histogram_js_divergence(baseline_f1, current_f1)
+            if f1_jsd - thresholds.max_f1_distribution_jsd > thresholds.metric_tolerance:
+                issues.append(
+                    {
+                        "profile": current.profile,
+                        "metric": "f1_distribution_js_divergence",
+                        "baseline": 0.0,
+                        "current": f1_jsd,
+                        "drop": f1_jsd,
+                        "max_drop": thresholds.max_f1_distribution_jsd,
+                    }
+                )
+
+    if baseline_conf and current_conf:
+        if thresholds.max_f1_distribution_kl is not None:
+            conf_kl = _histogram_kl_divergence(baseline_conf, current_conf)
+            if conf_kl - thresholds.max_f1_distribution_kl > thresholds.metric_tolerance:
+                issues.append(
+                    {
+                        "profile": current.profile,
+                        "metric": "confidence_distribution_kl_divergence",
+                        "baseline": 0.0,
+                        "current": conf_kl,
+                        "drop": conf_kl,
+                        "max_drop": thresholds.max_f1_distribution_kl,
+                    }
+                )
+        if thresholds.max_f1_distribution_jsd is not None:
+            conf_jsd = _histogram_js_divergence(baseline_conf, current_conf)
+            if conf_jsd - thresholds.max_f1_distribution_jsd > thresholds.metric_tolerance:
+                issues.append(
+                    {
+                        "profile": current.profile,
+                        "metric": "confidence_distribution_js_divergence",
+                        "baseline": 0.0,
+                        "current": conf_jsd,
+                        "drop": conf_jsd,
+                        "max_drop": thresholds.max_f1_distribution_jsd,
+                    }
+                )
+
     return issues
 
 
@@ -332,7 +444,7 @@ def run_benchmark_profiles(  # pylint: disable=too-many-arguments
                 continue
             regressions.extend(
                 _check_regressions(
-                    baseline=baseline_result.report,
+                    baseline=baseline_result,
                     current=result,
                     thresholds=active_thresholds,
                 )

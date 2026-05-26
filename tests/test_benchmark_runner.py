@@ -152,3 +152,6 @@ def test_run_benchmark_profiles_detects_regression(tmp_path: Path) -> None:
         )
 
     assert regressions
+
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+    assert "answers" in payload["results"][0]
