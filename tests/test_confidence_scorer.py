@@ -264,6 +264,32 @@ class TestConfidenceScorer:
         assert result.evidence_chain[0].span == "Gustave Eiffel"
         assert any(item.graph_property == "architect" for item in result.evidence_chain)
 
+    def test_type_mismatch_gates_qt_bonus_and_penalizes_confidence(self) -> None:
+        with (
+            patch(
+                "watson_lite.core.extractor.resolve_span_to_qid",
+                return_value="Q207440",
+            ),
+            patch(
+                "watson_lite.core.extractor.score_type_coercion",
+                return_value=0.0,
+            ),
+        ):
+            candidates = [
+                AnswerCandidate(
+                    span="Eli Lilly",
+                    source="src",
+                    url="",
+                    passage="Eli Lilly manufactured penicillin.",
+                    extraction_score=0.976,
+                    rank=1,
+                ),
+            ]
+            result = self.scorer.score(candidates, [], "who", lat_qids=["Q5"])
+        assert result.confidence_breakdown["question_type_bonus"] == 0.0
+        assert result.confidence_breakdown["type_coercion"] == 0.0
+        assert result.confidence < 0.3
+
     def test_bidirectional_signal_affects_breakdown(self) -> None:
         candidates = [
             AnswerCandidate(

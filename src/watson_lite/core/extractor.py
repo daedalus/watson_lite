@@ -225,12 +225,6 @@ class ConfidenceScorer:
         max_doc_frequency = max(c.doc_frequency for c in candidates)
         frequency_signal = best.doc_frequency / max(1, max_doc_frequency)
 
-        qt_bonus = (
-            _question_type_bonus(best.span, question_type)
-            if enable_question_type_bonus
-            else 0.0
-        )
-
         best_qid = (
             resolve_span_to_qid(best.span)
             if enable_type_coercion or enable_answer_merging
@@ -242,6 +236,19 @@ class ConfidenceScorer:
             if enable_type_coercion
             else 0.0
         )
+
+        qt_bonus = (
+            _question_type_bonus(best.span, question_type)
+            if enable_question_type_bonus
+            else 0.0
+        )
+        if (
+            enable_question_type_bonus
+            and enable_type_coercion
+            and lat_qids
+            and type_signal == 0.0
+        ):
+            qt_bonus = 0.0
 
         term_match_signal = (
             score_term_match(question, ranked_passages)
@@ -281,6 +288,14 @@ class ConfidenceScorer:
             + 0.05 * bidirectional_signal
         )
         confidence = round(min(confidence, 1.0), 3)
+
+        if (
+            lat_qids
+            and enable_type_coercion
+            and type_signal == 0.0
+            and best_qid is not None
+        ):
+            confidence = round(confidence * 0.3, 3)
 
         return FinalAnswer(
             answer=best.span,
