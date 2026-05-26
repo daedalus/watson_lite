@@ -1,5 +1,4 @@
 """Tests for search query generation from parsed questions."""
-
 from watson_lite.core.models import ParsedQuestion
 from watson_lite.retrieval.query_formulation import (
     _content_words,
@@ -172,7 +171,9 @@ class TestGenerateSearchQueriesAugmented:
         parsed = _make_parsed(
             raw="Why did the Roman Empire fall?",
             question_type="why",
-            entities=[{"text": "Roman Empire", "label": "ORG", "start": 0, "end": 12}],
+            entities=[
+                {"text": "Roman Empire", "label": "ORG", "start": 0, "end": 12}
+            ],
         )
         queries = generate_search_queries(parsed)
         assert any("reason" in q for q in queries)

@@ -1,5 +1,4 @@
 """Tests for the temporal and geospatial consistency scoring functions."""
-
 import pytest
 
 from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
