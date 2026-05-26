@@ -1,4 +1,5 @@
 """Tests for pure Python helpers in the type_coercion module."""
+
 import json
 from unittest.mock import MagicMock, patch
 
@@ -202,9 +203,7 @@ class TestResolveSpanToQid:
             patch(
                 "watson_lite.scoring.type_coercion.get_cache", return_value=mock_cache
             ),
-            patch(
-                "watson_lite.scoring.type_coercion.is_cache_miss", return_value=True
-            ),
+            patch("watson_lite.scoring.type_coercion.is_cache_miss", return_value=True),
             patch(
                 "watson_lite.scoring.type_coercion.requests.get",
                 return_value=mock_resp,
@@ -213,9 +212,7 @@ class TestResolveSpanToQid:
             result = resolve_span_to_qid("Paris")
 
         assert result == "Q90"
-        mock_cache.set.assert_called_once_with(
-            f"tc:entity:paris", "Q90"
-        )
+        mock_cache.set.assert_called_once_with(f"tc:entity:paris", "Q90")
 
     def test_api_non_200_returns_none(self) -> None:
         mock_resp = MagicMock()
@@ -228,9 +225,7 @@ class TestResolveSpanToQid:
             patch(
                 "watson_lite.scoring.type_coercion.get_cache", return_value=mock_cache
             ),
-            patch(
-                "watson_lite.scoring.type_coercion.is_cache_miss", return_value=True
-            ),
+            patch("watson_lite.scoring.type_coercion.is_cache_miss", return_value=True),
             patch(
                 "watson_lite.scoring.type_coercion.requests.get",
                 return_value=mock_resp,
@@ -253,9 +248,7 @@ class TestResolveSpanToQid:
             patch(
                 "watson_lite.scoring.type_coercion.get_cache", return_value=mock_cache
             ),
-            patch(
-                "watson_lite.scoring.type_coercion.is_cache_miss", return_value=True
-            ),
+            patch("watson_lite.scoring.type_coercion.is_cache_miss", return_value=True),
             patch(
                 "watson_lite.scoring.type_coercion.requests.get",
                 return_value=mock_resp,
@@ -274,9 +267,7 @@ class TestResolveSpanToQid:
             patch(
                 "watson_lite.scoring.type_coercion.get_cache", return_value=mock_cache
             ),
-            patch(
-                "watson_lite.scoring.type_coercion.is_cache_miss", return_value=True
-            ),
+            patch("watson_lite.scoring.type_coercion.is_cache_miss", return_value=True),
             patch(
                 "watson_lite.scoring.type_coercion.requests.get",
                 side_effect=ConnectionError("timeout"),
@@ -352,9 +343,7 @@ class TestFetchTypeHierarchy:
                 ),
                 patch(
                     "watson_lite.scoring.type_coercion._batch_fetch_claims",
-                    return_value={
-                        "Q_FRESH": {"P31": ["Q5"], "P279": []}
-                    },
+                    return_value={"Q_FRESH": {"P31": ["Q5"], "P279": []}},
                 ),
             ):
                 result = _fetch_type_hierarchy("Q_FRESH", max_depth=1)
@@ -423,4 +412,3 @@ class TestScoreTypeCoercion:
         ):
             result = score_type_coercion([_make_candidate("A City")], ["Q5"])
         assert result == 0.0
-
