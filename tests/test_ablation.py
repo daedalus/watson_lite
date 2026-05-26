@@ -80,6 +80,8 @@ def _make_kpi_report(
         exact_match=em,
         f1=f1,
         confidence_calibration_ece=0.0,
+        confidence_calibration_kl_divergence=0.0,
+        confidence_calibration_js_divergence=0.0,
         retrieval_recall_at_k=recall,
         average_passages_fetched=1.0,
         average_passages_reranked=1.0,

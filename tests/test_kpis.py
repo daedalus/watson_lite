@@ -112,6 +112,39 @@ class TestKPIEvaluation:
         assert report.f1 == 1.0
         assert report.retrieval_recall_at_k == 1.0
         assert report.confidence_calibration_ece is not None
+        assert report.confidence_calibration_kl_divergence is not None
+        assert report.confidence_calibration_js_divergence is not None
+        assert report.confidence_calibration_kl_divergence >= 0.0
+        assert report.confidence_calibration_js_divergence >= 0.0
+
+    def test_labeled_kpis_calibration_divergence_is_zero_when_perfectly_calibrated(
+        self,
+    ) -> None:
+        answers = [
+            _answer("alpha", 0.25),
+            _answer("beta", 0.25),
+            _answer("gamma", 0.25),
+            _answer("delta", 0.25),
+            _answer("echo", 0.75),
+            _answer("foxtrot", 0.75),
+            _answer("golf", 0.75),
+            _answer("hotel", 0.75),
+        ]
+        labels = [
+            BenchmarkLabel(answers=["wrong-one"]),
+            BenchmarkLabel(answers=["wrong-two"]),
+            BenchmarkLabel(answers=["wrong-three"]),
+            BenchmarkLabel(answers=["delta"]),
+            BenchmarkLabel(answers=["echo"]),
+            BenchmarkLabel(answers=["foxtrot"]),
+            BenchmarkLabel(answers=["golf"]),
+            BenchmarkLabel(answers=["wrong-four"]),
+        ]
+
+        report = evaluate_kpis(answers, labels, calibration_bins=2)
+
+        assert report.confidence_calibration_kl_divergence == pytest.approx(0.0)
+        assert report.confidence_calibration_js_divergence == pytest.approx(0.0)
 
     def test_requires_non_empty_answers(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):

@@ -83,6 +83,12 @@ def test_run_benchmark_profiles_outputs_files(tmp_path: Path) -> None:
     assert regressions == []
     assert output_json.exists()
     assert output_csv.exists()
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+    assert "confidence_calibration_kl_divergence" in payload["results"][0]["metrics"]
+    assert "confidence_calibration_js_divergence" in payload["results"][0]["metrics"]
+    header = output_csv.read_text(encoding="utf-8").splitlines()[0].split(",")
+    assert "confidence_calibration_kl_divergence" in header
+    assert "confidence_calibration_js_divergence" in header
 
 
 def test_run_benchmark_profiles_detects_regression(tmp_path: Path) -> None:

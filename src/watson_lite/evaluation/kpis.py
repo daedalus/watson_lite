@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import statistics
 import string
@@ -42,6 +43,8 @@ class KPIReport:
     exact_match: float | None
     f1: float | None
     confidence_calibration_ece: float | None
+    confidence_calibration_kl_divergence: float | None
+    confidence_calibration_js_divergence: float | None
     retrieval_recall_at_k: float | None
     average_passages_fetched: float
     average_passages_reranked: float
@@ -151,6 +154,36 @@ def _ece(scores: list[float], labels: list[bool], bins: int = 10) -> float:
     return ece
 
 
+def _clip_probability(value: float, epsilon: float = 1e-12) -> float:
+    return min(max(value, epsilon), 1.0 - epsilon)
+
+
+def _bernoulli_kl_divergence(
+    observed: float,
+    predicted: float,
+    epsilon: float = 1e-12,
+) -> float:
+    observed = _clip_probability(observed, epsilon)
+    predicted = _clip_probability(predicted, epsilon)
+    return (
+        observed * math.log(observed / predicted)
+        + (1.0 - observed) * math.log((1.0 - observed) / (1.0 - predicted))
+    )
+
+
+def _bernoulli_js_divergence(
+    observed: float,
+    predicted: float,
+    epsilon: float = 1e-12,
+) -> float:
+    midpoint = (observed + predicted) / 2.0
+    return 0.5 * _bernoulli_kl_divergence(
+        observed,
+        midpoint,
+        epsilon,
+    ) + 0.5 * _bernoulli_kl_divergence(predicted, midpoint, epsilon)
+
+
 def _recall_hit(retrieved: list[str], evidence_passages: list[str], top_k: int) -> bool:
     if not evidence_passages:
         return False
@@ -184,11 +217,13 @@ def _evaluate_labeled(
     recall_k: int,
     calibration_bins: int,
     normalize_fn: NormalizeFn = normalize_squad,
-) -> tuple[float, float, float, float, float]:
+) -> tuple[float, float, float, float, float, float, float]:
     em_values: list[float] = []
     f1_values: list[float] = []
     correctness: list[bool] = []
     confidence_scores: list[float] = []
+    bucket_scores: list[list[float]] = [[] for _ in range(calibration_bins)]
+    bucket_correctness: list[list[float]] = [[] for _ in range(calibration_bins)]
     recall_hits = 0
     recall_total = 0
 
@@ -198,7 +233,11 @@ def _evaluate_labeled(
         em_values.append(em)
         f1_values.append(f1)
         correctness.append(em > 0)
-        confidence_scores.append(float(answer.confidence))
+        confidence = float(answer.confidence)
+        confidence_scores.append(confidence)
+        bucket = min(int(confidence * calibration_bins), calibration_bins - 1)
+        bucket_scores[bucket].append(confidence)
+        bucket_correctness[bucket].append(float(em > 0))
 
         diagnostics = answer.diagnostics
         if diagnostics is not None and label.evidence_passages:
@@ -215,8 +254,32 @@ def _evaluate_labeled(
     em_score = sum(em_values) / total
     f1_score = sum(f1_values) / total
     ece = _ece(confidence_scores, correctness, bins=calibration_bins)
+    kl_divergence = 0.0
+    js_divergence = 0.0
+    for scores, labels_in_bucket in zip(bucket_scores, bucket_correctness):
+        if not scores:
+            continue
+        weight = len(scores) / total
+        mean_confidence = sum(scores) / len(scores)
+        empirical_accuracy = sum(labels_in_bucket) / len(labels_in_bucket)
+        kl_divergence += weight * _bernoulli_kl_divergence(
+            empirical_accuracy,
+            mean_confidence,
+        )
+        js_divergence += weight * _bernoulli_js_divergence(
+            empirical_accuracy,
+            mean_confidence,
+        )
     recall = (recall_hits / recall_total) if recall_total else 0.0
-    return accuracy_at_1, em_score, f1_score, ece, recall
+    return (
+        accuracy_at_1,
+        em_score,
+        f1_score,
+        ece,
+        kl_divergence,
+        js_divergence,
+        recall,
+    )
 
 
 def evaluate_kpis(
@@ -280,10 +343,20 @@ def evaluate_kpis(
     em_score: float | None = None
     f1_score: float | None = None
     ece: float | None = None
+    kl_divergence: float | None = None
+    js_divergence: float | None = None
     recall: float | None = None
 
     if labels is not None:
-        accuracy_at_1, em_score, f1_score, ece, recall = _evaluate_labeled(
+        (
+            accuracy_at_1,
+            em_score,
+            f1_score,
+            ece,
+            kl_divergence,
+            js_divergence,
+            recall,
+        ) = _evaluate_labeled(
             answers,
             labels,
             recall_k=recall_k,
@@ -306,6 +379,8 @@ def evaluate_kpis(
         exact_match=em_score,
         f1=f1_score,
         confidence_calibration_ece=ece,
+        confidence_calibration_kl_divergence=kl_divergence,
+        confidence_calibration_js_divergence=js_divergence,
         retrieval_recall_at_k=recall,
         average_passages_fetched=avg_fetched,
         average_passages_reranked=avg_reranked,
