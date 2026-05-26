@@ -82,6 +82,6 @@ def test_checked_in_benchmark_dataset_runs_regression_smoke(
     assert len(first["answers"]) == 3
     assert all(
         {"question", "generated_answer", "reference_answers", "exact_match", "f1",
-         "confidence", "latency_s"}.issubset(a.keys())
+         "confidence", "latency_s"} <= set(a.keys())
         for a in first["answers"]
     )
