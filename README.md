@@ -6,6 +6,46 @@ A Watson-inspired extractive QA system that runs on a laptop.
 [![Python](https://img.shields.io/pypi/pyversions/watson-lite.svg)](https://pypi.org/project/watson-lite/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/master/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+## Why?
+
+LLMs have largely displaced classical QA systems, but that displacement came
+with trade-offs that matter in practice. watson-lite optimises for the
+constraints LLMs handle poorly.
+
+**Transparency and auditability.** Every step in the pipeline is a named,
+inspectable object: BM25 scores, RRF fusion weights, span extraction logits,
+graph corroboration flags, calibrated confidence breakdown. You can trace
+exactly *why* the answer is what it is. For regulated industries, research
+workflows, or anywhere an answer must be explained and verified, that audit
+trail is essential.
+
+**No hallucination by construction.** Extractive QA cannot invent a fact that
+is not in a retrieved passage. Every answer is a verbatim span from a public
+source. The confidence score is a function of extraction score, span agreement
+across independent retrievals, graph corroboration, and rank signal — all
+measurable and falsifiable. A language model can be confidently wrong;
+watson-lite either finds a span or returns confidence 0.
+
+**Cost and data sovereignty.** Zero token cost, zero API keys, no data sent to
+a third party. The system runs on a laptop CPU with roughly 670 MB of
+pretrained models and a live REST connection to Wikipedia — public
+infrastructure. Anyone who cannot or will not pay per-query or expose queries
+to a vendor can run this as-is.
+
+**A teaching object for classical NLP architecture.** The
+[GAP analysis](GAP.md) traces every design decision back to the Ferrucci et
+al. DeepQA papers. Reading the codebase alongside those papers is a
+curriculum: question analysis → retrieval → hypothesis generation → scoring →
+confidence calibration. That pipeline is still the skeleton inside every
+modern RAG system; watson-lite makes the skeleton visible and runnable.
+
+**A composable RAG building block.** Once a persistent BM25/FAISS index is
+wired to a domain corpus (see GAP-01 in [GAP.md](GAP.md)), watson-lite becomes
+a deterministic retriever and reader that can feed a generation layer or stand
+alone. The design question is not *"does this beat GPT-4?"* but *"what do you
+get when you optimise for explainability, zero hallucination, and zero cost
+instead of raw benchmark score?"*
+
 ## Install
 
 ```bash
