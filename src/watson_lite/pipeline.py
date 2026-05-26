@@ -537,86 +537,21 @@ class WatsonLite:
         )
         stage_latencies["scoring"] = round(time.perf_counter() - stage_t0, 4)
 
-        final_ranked = ranked
-        final_extraction_errors = extraction_errors
-        final_passages_extracted = passages_extracted
-        final_passages_reranked = passages_reranked
-
-        if (
-            self.config.iterative_retrieval
-            and answer.confidence < self.config.iterative_retrieval_threshold
-            and answer.answer
-            not in ("No answer found", "Could not retrieve relevant passages.")
-        ):
-            iterative_t0 = time.perf_counter()
-            best_answer = answer
-            best_confidence = answer.confidence
-            for pass_index in range(1, self.config.max_retrieval_passes):
-                self._log_detail(verbose, "Iterative retrieval pass %d", pass_index + 1)
-                refined_query = f"{question} {best_answer.answer}"
-                refined_passages = self._dedupe_passages(
-                    self.dataset_query_engine.query(
-                        refined_query, top_k=self.config.wikipedia_top_k_per_query
-                    )
-                )
-                if not refined_passages:
-                    continue
-
-                refined_hash = _passages_hash(refined_passages)
-                refined_needs_reindex = refined_hash != self._last_passage_hash
-                self._last_passage_hash = refined_hash
-                refined_bm25, refined_vector = self._retrieve_parallel(
-                    refined_query,
-                    refined_passages,
-                    refined_needs_reindex,
-                    vector_retriever=self._get_vector(),
-                    vector_enabled=self.config.vector_retrieval,
-                    top_k=self.config.retrieval_top_k,
-                )
-                refined_ranked = self._get_ranker().rank(
-                    question,
-                    refined_bm25,
-                    refined_vector,
-                    top_k=self.config.rerank_top_k,
-                    use_cross_encoder=self.config.cross_encoder_reranking,
-                )
-                refined_candidates, refined_errors = self._collect_candidates(
-                    parsed,
-                    refined_ranked,
-                    verbose=verbose,
-                )
-                self._per_candidate_reretrieval(
-                    parsed,
-                    refined_candidates,
-                    verbose=verbose,
-                )
-                refined_bidirectional = 0.0
-                if self.config.bidirectional_validation and refined_candidates:
-                    refined_bidirectional = bidirectional_score(
-                        refined_candidates[0].span,
-                        question,
-                        self.dataset_query_engine,
-                        top_k=3,
-                    )
-                refined_answer = self._score_answer(
-                    question,
-                    parsed,
-                    refined_ranked,
-                    refined_candidates,
-                    graph_results,
-                    bidirectional_signal=refined_bidirectional,
-                )
-                if refined_answer.confidence > best_confidence:
-                    best_answer = refined_answer
-                    best_confidence = refined_answer.confidence
-                    final_ranked = refined_ranked
-                    final_extraction_errors = refined_errors
-                    final_passages_extracted = len(refined_candidates)
-                    final_passages_reranked = len(refined_ranked)
-            answer = best_answer
-            stage_latencies["iterative_retrieval"] = round(
-                time.perf_counter() - iterative_t0, 4
-            )
+        result = self._run_iterative_retrieval(
+            question, parsed, answer, graph_results, verbose
+        )
+        if result is not None:
+            answer, latencies, f_ranked, f_errors, f_extracted, f_reranked = result
+            stage_latencies.update(latencies)
+            final_ranked = f_ranked
+            final_extraction_errors = f_errors
+            final_passages_extracted = f_extracted
+            final_passages_reranked = f_reranked
+        else:
+            final_ranked = ranked
+            final_extraction_errors = extraction_errors
+            final_passages_extracted = passages_extracted
+            final_passages_reranked = passages_reranked
 
         total_latency = round(time.perf_counter() - t0, 4)
         stage_latencies["total"] = total_latency
@@ -644,6 +579,140 @@ class WatsonLite:
             self._print_answer(answer, total_latency)
 
         return answer
+
+    def _run_iterative_retrieval(
+        self,
+        question: str,
+        parsed: ParsedQuestion,
+        answer: FinalAnswer,
+        graph_results: list[GraphResult],
+        verbose: bool,
+    ) -> (
+        tuple[
+            FinalAnswer,
+            dict[str, float],
+            list[RankedPassage],
+            int,
+            int,
+            int,
+        ]
+        | None
+    ):
+        if (
+            not self.config.iterative_retrieval
+            or answer.confidence >= self.config.iterative_retrieval_threshold
+            or answer.answer
+            in ("No answer found", "Could not retrieve relevant passages.")
+        ):
+            return None
+
+        iterative_t0 = time.perf_counter()
+        best_answer = answer
+        best_confidence = answer.confidence
+        improved = False
+        final_ranked: list[RankedPassage] = []
+        final_errors = 0
+        final_extracted = 0
+        final_reranked = 0
+
+        for pass_index in range(1, self.config.max_retrieval_passes):
+            self._log_detail(verbose, "Iterative retrieval pass %d", pass_index + 1)
+            refined_query = f"{question} {best_answer.answer}"
+            refined_passages = self._dedupe_passages(
+                self.dataset_query_engine.query(
+                    refined_query, top_k=self.config.wikipedia_top_k_per_query
+                )
+            )
+            if not refined_passages:
+                continue
+
+            result = self._run_single_iterative_pass(
+                question,
+                parsed,
+                refined_query,
+                refined_passages,
+                graph_results,
+                verbose,
+            )
+            if result is None:
+                continue
+
+            refined_answer, refined_ranked, refined_errors, refined_candidates = result
+            if refined_answer.confidence > best_confidence:
+                best_answer = refined_answer
+                best_confidence = refined_answer.confidence
+                improved = True
+                final_ranked = refined_ranked
+                final_errors = refined_errors
+                final_extracted = len(refined_candidates)
+                final_reranked = len(refined_ranked)
+
+        if not improved:
+            return None
+
+        return (
+            best_answer,
+            {"iterative_retrieval": round(time.perf_counter() - iterative_t0, 4)},
+            final_ranked,
+            final_errors,
+            final_extracted,
+            final_reranked,
+        )
+
+    def _run_single_iterative_pass(
+        self,
+        question: str,
+        parsed: ParsedQuestion,
+        refined_query: str,
+        refined_passages: list[Passage],
+        graph_results: list[GraphResult],
+        verbose: bool,
+    ) -> tuple[FinalAnswer, list[RankedPassage], int, list[AnswerCandidate]] | None:
+        refined_hash = _passages_hash(refined_passages)
+        refined_needs_reindex = refined_hash != self._last_passage_hash
+        self._last_passage_hash = refined_hash
+        refined_bm25, refined_vector = self._retrieve_parallel(
+            refined_query,
+            refined_passages,
+            refined_needs_reindex,
+            vector_retriever=self._get_vector(),
+            vector_enabled=self.config.vector_retrieval,
+            top_k=self.config.retrieval_top_k,
+        )
+        refined_ranked = self._get_ranker().rank(
+            question,
+            refined_bm25,
+            refined_vector,
+            top_k=self.config.rerank_top_k,
+            use_cross_encoder=self.config.cross_encoder_reranking,
+        )
+        refined_candidates, refined_errors = self._collect_candidates(
+            parsed,
+            refined_ranked,
+            verbose=verbose,
+        )
+        self._per_candidate_reretrieval(
+            parsed,
+            refined_candidates,
+            verbose=verbose,
+        )
+        refined_bidirectional = 0.0
+        if self.config.bidirectional_validation and refined_candidates:
+            refined_bidirectional = bidirectional_score(
+                refined_candidates[0].span,
+                question,
+                self.dataset_query_engine,
+                top_k=3,
+            )
+        refined_answer = self._score_answer(
+            question,
+            parsed,
+            refined_ranked,
+            refined_candidates,
+            graph_results,
+            bidirectional_signal=refined_bidirectional,
+        )
+        return refined_answer, refined_ranked, refined_errors, refined_candidates
 
     def _print_answer(self, answer: FinalAnswer, elapsed: float) -> None:
         logger.info("=" * 50)

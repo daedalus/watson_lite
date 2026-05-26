@@ -31,8 +31,7 @@ def _parse_datasets(value: str) -> tuple[str, ...]:
     return datasets
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="watson-lite")
+def _add_input_output_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("question", nargs="*", help="Single question to answer")
     parser.add_argument(
         "--questions-from-file",
@@ -47,18 +46,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to write results as a JSON array (batch mode or single question)",
     )
     parser.add_argument(
-        "--exclude-datasets",
-        type=_parse_datasets,
-        default=None,
-        help=("Comma-separated dataset names to exclude (e.g. pubmed,arxiv)"),
-    )
-    parser.add_argument(
-        "--profile",
-        choices=("baseline", "minimal"),
-        default="baseline",
-        help="Starting runtime profile before applying explicit feature flags",
-    )
-    parser.add_argument(
         "--output",
         choices=("text", "json"),
         default="text",
@@ -69,106 +56,52 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include diagnostics in text output",
     )
-    parser.add_argument(
-        "--clear-cache",
-        action="store_true",
-        help="Clear the local cache before answering or benchmarking",
-    )
 
-    parser.add_argument(
-        "--vector-retrieval",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable vector retrieval",
-    )
-    parser.add_argument(
-        "--query-expansion",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable query expansion variants",
-    )
-    parser.add_argument(
-        "--graph-enrichment",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable Wikidata graph enrichment",
-    )
-    parser.add_argument(
-        "--cross-encoder-reranking",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable cross-encoder reranking",
-    )
-    parser.add_argument(
-        "--question-type-bonus",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable question-type confidence bonus",
-    )
-    parser.add_argument(
-        "--type-coercion",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable type coercion signal",
-    )
-    parser.add_argument(
-        "--term-match",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable IDF-weighted term match signal",
-    )
-    parser.add_argument(
-        "--consistency",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable temporal/geospatial consistency checks",
-    )
-    parser.add_argument(
-        "--answer-merging",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable merging equivalent answers via Wikidata QID",
-    )
-    parser.add_argument(
-        "--multi-hypothesis",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable multiple hypothesis generators",
-    )
-    parser.add_argument(
-        "--per-candidate-retrieval",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable per-candidate evidence re-retrieval",
-    )
-    parser.add_argument(
-        "--bidirectional-validation",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable bidirectional answer validation",
-    )
-    parser.add_argument(
-        "--iterative-retrieval",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable iterative multi-pass retrieval",
-    )
-    parser.add_argument(
-        "--semantic-nlp",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable/disable semantic NLP helpers",
-    )
 
-    parser.add_argument("--wiki-top-k", type=int, default=5)
+def _add_feature_toggle_args(parser: argparse.ArgumentParser) -> None:
+    toggles = [
+        ("--vector-retrieval", "Enable/disable vector retrieval"),
+        ("--query-expansion", "Enable/disable query expansion variants"),
+        ("--graph-enrichment", "Enable/disable Wikidata graph enrichment"),
+        ("--cross-encoder-reranking", "Enable/disable cross-encoder reranking"),
+        ("--question-type-bonus", "Enable/disable question-type confidence bonus"),
+        ("--type-coercion", "Enable/disable type coercion signal"),
+        ("--term-match", "Enable/disable IDF-weighted term match signal"),
+        ("--consistency", "Enable/disable temporal/geospatial consistency checks"),
+        (
+            "--answer-merging",
+            "Enable/disable merging equivalent answers via Wikidata QID",
+        ),
+        ("--multi-hypothesis", "Enable/disable multiple hypothesis generators"),
+        (
+            "--per-candidate-retrieval",
+            "Enable/disable per-candidate evidence re-retrieval",
+        ),
+        (
+            "--bidirectional-validation",
+            "Enable/disable bidirectional answer validation",
+        ),
+        ("--iterative-retrieval", "Enable/disable iterative multi-pass retrieval"),
+        ("--semantic-nlp", "Enable/disable semantic NLP helpers"),
+    ]
+    for flag, help_text in toggles:
+        parser.add_argument(
+            flag, action=argparse.BooleanOptionalAction, default=None, help=help_text
+        )
+
+
+def _add_dataset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--datasets",
         type=_parse_datasets,
         default=("wikipedia",),
-        help=(
-            "Comma-separated datasets to query "
-            "(e.g. wikipedia,wikibooks,wikiquote,pubmed,arxiv)"
-        ),
+        help="Comma-separated datasets to query (e.g. wikipedia,wikibooks,wikiquote,pubmed,arxiv)",
+    )
+    parser.add_argument(
+        "--exclude-datasets",
+        type=_parse_datasets,
+        default=None,
+        help="Comma-separated dataset names to exclude (e.g. pubmed,arxiv)",
     )
     parser.add_argument(
         "--elasticsearch-url",
@@ -186,35 +119,29 @@ def _build_parser() -> argparse.ArgumentParser:
         "--huggingface-dataset",
         type=str,
         default=None,
-        help=("Hugging Face dataset id (used when datasets include 'huggingface')"),
+        help="Hugging Face dataset id (used when datasets include 'huggingface')",
     )
     parser.add_argument(
         "--huggingface-config",
         type=str,
         default=None,
-        help=(
-            "Hugging Face dataset config name "
-            "(optional, used when datasets include 'huggingface')"
-        ),
+        help="Hugging Face dataset config name (optional, used when datasets include 'huggingface')",
     )
     parser.add_argument(
         "--huggingface-split",
         type=str,
         default=None,
-        help=("Hugging Face dataset split (used when datasets include 'huggingface')"),
+        help="Hugging Face dataset split (used when datasets include 'huggingface')",
     )
     parser.add_argument(
         "--huggingface-token",
         type=str,
         default=None,
-        help=("Hugging Face auth token (optional, used for private/gated datasets)"),
+        help="Hugging Face auth token (optional, used for private/gated datasets)",
     )
-    parser.add_argument("--retrieval-top-k", type=int, default=20)
-    parser.add_argument("--rerank-top-k", type=int, default=10)
-    parser.add_argument("--extract-top-k", type=int, default=5)
-    parser.add_argument("--max-retrieval-passes", type=int, default=2)
-    parser.add_argument("--iterative-retrieval-threshold", type=float, default=0.3)
 
+
+def _add_benchmark_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--benchmark-dataset")
     parser.add_argument("--benchmark-output-json", default="benchmark_results.json")
     parser.add_argument("--benchmark-output-csv")
@@ -229,11 +156,32 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metric-tolerance", type=float, default=0.001)
     parser.add_argument("--max-latency-p95-s", type=float)
 
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="watson-lite")
+    _add_input_output_args(parser)
     parser.add_argument(
-        "--device",
-        type=int,
-        default=-1,
-        help="Torch device index for model inference (-1 = CPU, 0+ = GPU)",
+        "--profile",
+        choices=("baseline", "minimal"),
+        default="baseline",
+        help="Starting runtime profile",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the local cache before answering or benchmarking",
+    )
+    _add_feature_toggle_args(parser)
+    parser.add_argument("--wiki-top-k", type=int, default=5)
+    _add_dataset_args(parser)
+    parser.add_argument("--retrieval-top-k", type=int, default=20)
+    parser.add_argument("--rerank-top-k", type=int, default=10)
+    parser.add_argument("--extract-top-k", type=int, default=5)
+    parser.add_argument("--max-retrieval-passes", type=int, default=2)
+    parser.add_argument("--iterative-retrieval-threshold", type=float, default=0.3)
+    _add_benchmark_args(parser)
+    parser.add_argument(
+        "--device", type=int, default=-1, help="Torch device index (-1 = CPU, 0+ = GPU)"
     )
     parser.add_argument(
         "--verbose",
@@ -241,9 +189,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print detailed step-by-step pipeline logs",
     )
     parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable DEBUG-level logging",
+        "--debug", action="store_true", help="Enable DEBUG-level logging"
     )
     parser.add_argument("--logfile", type=str, help="Write logs to this file")
     return parser
@@ -341,91 +287,66 @@ def _emit_answer(
     _print_text_answer(answer, show_diagnostics=show_diagnostics)
 
 
-def main() -> int:
-    parser = _build_parser()
-    args = parser.parse_args(sys.argv[1:])
+def _run_benchmark_mode(args: argparse.Namespace, config: FeatureConfig) -> int:
+    thresholds = RegressionThresholds(
+        max_accuracy_drop=args.max_accuracy_drop,
+        max_exact_match_drop=args.max_exact_match_drop,
+        max_f1_drop=args.max_f1_drop,
+        max_recall_drop=args.max_recall_drop,
+        metric_tolerance=args.metric_tolerance,
+        max_latency_p95_s=args.max_latency_p95_s,
+    )
+    results, regressions = run_benchmark_profiles(
+        dataset_path=args.benchmark_dataset,
+        config=config,
+        output_json_path=args.benchmark_output_json,
+        output_csv_path=args.benchmark_output_csv,
+        recall_k=args.recall_k,
+        calibration_bins=args.calibration_bins,
+        ablation_sweep=args.ablation_sweep,
+        regression_check=args.regression_check,
+        thresholds=thresholds,
+    )
+    logging.info(
+        "Benchmark completed: %d profiles, %d regressions",
+        len(results),
+        len(regressions),
+    )
+    return 1 if regressions else 0
 
-    log_level = logging.DEBUG if args.debug else logging.INFO
-    if args.logfile:
-        logging.basicConfig(
-            filename=args.logfile,
-            filemode="a",
-            format="%(message)s",
-            level=log_level,
-        )
-    else:
-        logging.basicConfig(format="%(message)s", level=log_level, stream=sys.stdout)
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
 
-    config = _build_config(args)
-
-    if args.clear_cache:
-        get_cache().clear()
-        logging.info("Cleared local cache")
-
-    if args.benchmark_dataset:
-        thresholds = RegressionThresholds(
-            max_accuracy_drop=args.max_accuracy_drop,
-            max_exact_match_drop=args.max_exact_match_drop,
-            max_f1_drop=args.max_f1_drop,
-            max_recall_drop=args.max_recall_drop,
-            metric_tolerance=args.metric_tolerance,
-            max_latency_p95_s=args.max_latency_p95_s,
-        )
-        results, regressions = run_benchmark_profiles(
-            dataset_path=args.benchmark_dataset,
-            config=config,
-            output_json_path=args.benchmark_output_json,
-            output_csv_path=args.benchmark_output_csv,
-            recall_k=args.recall_k,
-            calibration_bins=args.calibration_bins,
-            ablation_sweep=args.ablation_sweep,
-            regression_check=args.regression_check,
-            thresholds=thresholds,
-        )
-        logging.info(
-            "Benchmark completed: %d profiles, %d regressions",
-            len(results),
-            len(regressions),
-        )
-        return 1 if regressions else 0
-
-    watson = WatsonLite(config=config, device=args.device)
-
-    if args.questions_from_file:
-        with open(args.questions_from_file, encoding="utf-8") as f:
-            questions = [line.strip() for line in f if line.strip()]
-        results = []
-        for i, question in enumerate(questions):
-            logging.info("[%d/%d] %s", i + 1, len(questions), question)
-            answer = watson.answer(question, verbose=args.verbose)
-            results.append(asdict(answer))
-            _emit_answer(
-                answer,
-                output_format=args.output,
-                show_diagnostics=args.show_diagnostics,
-            )
-            sys.stdout.flush()
-        if args.output_json:
-            with open(args.output_json, "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2, sort_keys=True)
-            logging.info("Wrote %d results to %s", len(results), args.output_json)
-        return 0
-
-    if args.question:
-        question = " ".join(args.question)
+def _run_batch_mode(args: argparse.Namespace, watson: WatsonLite) -> int:
+    with open(args.questions_from_file, encoding="utf-8") as f:
+        questions = [line.strip() for line in f if line.strip()]
+    results = []
+    for i, question in enumerate(questions):
+        logging.info("[%d/%d] %s", i + 1, len(questions), question)
         answer = watson.answer(question, verbose=args.verbose)
-        if args.output_json:
-            with open(args.output_json, "w", encoding="utf-8") as f:
-                json.dump(asdict(answer), f, indent=2, sort_keys=True)
+        results.append(asdict(answer))
         _emit_answer(
-            answer,
-            output_format=args.output,
-            show_diagnostics=args.show_diagnostics,
+            answer, output_format=args.output, show_diagnostics=args.show_diagnostics
         )
-        return 0
+        sys.stdout.flush()
+    if args.output_json:
+        with open(args.output_json, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, sort_keys=True)
+        logging.info("Wrote %d results to %s", len(results), args.output_json)
+    return 0
 
+
+def _run_single_question(args: argparse.Namespace, watson: WatsonLite) -> int:
+    question = " ".join(args.question)
+    answer = watson.answer(question, verbose=args.verbose)
+    if args.output_json:
+        with open(args.output_json, "w", encoding="utf-8") as f:
+            json.dump(asdict(answer), f, indent=2, sort_keys=True)
+    _emit_answer(
+        answer, output_format=args.output, show_diagnostics=args.show_diagnostics
+    )
+    return 0
+
+
+def _run_interactive(args: argparse.Namespace, watson: WatsonLite) -> int:
     print(f"""
 ╔══════════════════════════════════════╗
 ║         WatsonLite  v{_VERSION:<15} ║
@@ -434,28 +355,56 @@ def main() -> int:
 Type a question and press Enter.
 Type 'quit' or Ctrl+C to exit.
 """)
-
     while True:
         try:
             question = input("\n❓ Question: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye.")
             return 0
-
         if not question:
             continue
         if question.lower() in ("quit", "exit", "q"):
             print("Goodbye.")
             break
-
         answer = watson.answer(question, verbose=args.verbose)
         _emit_answer(
-            answer,
-            output_format=args.output,
-            show_diagnostics=args.show_diagnostics,
+            answer, output_format=args.output, show_diagnostics=args.show_diagnostics
         )
-
     return 0
+
+
+def _setup_logging(args: argparse.Namespace) -> None:
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    if args.logfile:
+        logging.basicConfig(
+            filename=args.logfile, filemode="a", format="%(message)s", level=log_level
+        )
+    else:
+        logging.basicConfig(format="%(message)s", level=log_level, stream=sys.stdout)
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+
+def main() -> int:
+    parser = _build_parser()
+    args = parser.parse_args(sys.argv[1:])
+    _setup_logging(args)
+    config = _build_config(args)
+
+    if args.clear_cache:
+        get_cache().clear()
+        logging.info("Cleared local cache")
+
+    if args.benchmark_dataset:
+        return _run_benchmark_mode(args, config)
+
+    watson = WatsonLite(config=config, device=args.device)
+
+    if args.questions_from_file:
+        return _run_batch_mode(args, watson)
+    if args.question:
+        return _run_single_question(args, watson)
+    return _run_interactive(args, watson)
 
 
 if __name__ == "__main__":
