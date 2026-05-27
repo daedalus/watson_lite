@@ -108,7 +108,9 @@ class WatsonLite:
         self.graph: WikidataGraph | None = None
         self.ranker: Ranker | None = None
         self.reader: ExtractiveReader | None = None
-        self.scorer = ConfidenceScorer()
+        self.scorer = ConfidenceScorer(
+            confidence_threshold=self.config.confidence_threshold
+        )
         self._last_passage_hash: str | None = None
         logger.info("Core components loaded. Heavy models will load lazily.")
 

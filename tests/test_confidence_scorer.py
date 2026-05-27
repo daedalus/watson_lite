@@ -335,7 +335,72 @@ class TestConfidenceScorer:
         assert result.confidence_breakdown["type_coercion"] == 0.0
         assert result.confidence < 0.3
 
-    def test_bidirectional_signal_affects_breakdown(self) -> None:
+    def test_threshold_abstains_when_confidence_below(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="src",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.05,
+                rank=10,
+            )
+        ]
+        scorer = ConfidenceScorer(confidence_threshold=0.9)
+        result = scorer.score(candidates, [], "where")
+        assert result.answer == "I don't know"
+        assert result.confidence_breakdown["reason"] == "below_threshold"
+        assert result.confidence_breakdown["threshold"] == 0.9
+
+    def test_threshold_passes_when_confidence_above(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="src",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.9,
+                rank=1,
+            )
+        ]
+        scorer = ConfidenceScorer(confidence_threshold=0.0)
+        result = scorer.score(candidates, [], "where")
+        assert result.answer == "Paris"
+
+    def test_no_threshold_always_returns_answer(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="src",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.01,
+                rank=10,
+            )
+        ]
+        scorer = ConfidenceScorer(confidence_threshold=None)
+        result = scorer.score(candidates, [], "where")
+        assert result.answer == "Paris"
+
+    def test_threshold_abstain_preserves_computed_confidence(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="src",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.05,
+                rank=10,
+            )
+        ]
+        scorer_no_gate = ConfidenceScorer(confidence_threshold=None)
+        scorer_with_gate = ConfidenceScorer(confidence_threshold=0.9)
+        result_raw = scorer_no_gate.score(candidates, [], "where")
+        result_gated = scorer_with_gate.score(candidates, [], "where")
+        # The stored confidence value should equal the raw computed confidence
+        assert result_gated.confidence == pytest.approx(result_raw.confidence)
+
+
         candidates = [
             AnswerCandidate(
                 span="Paris",
