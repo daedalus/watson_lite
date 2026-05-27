@@ -174,6 +174,51 @@ class TestConfidenceScorer:
             mock_tc.assert_not_called()
             assert result.confidence_breakdown["type_coercion"] == 0.0
 
+    def test_entailment_toggle_off(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="a",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.9,
+                rank=1,
+            ),
+        ]
+        with patch("watson_lite.core.extractor.score_entailment") as mock_ent:
+            result = self.scorer.score(
+                candidates,
+                [],
+                "where",
+                question="Where is Paris?",
+                enable_entailment=False,
+            )
+            mock_ent.assert_not_called()
+            assert result.confidence_breakdown["textual_entailment"] == 0.0
+
+    def test_entailment_signal_affects_breakdown(self) -> None:
+        candidates = [
+            AnswerCandidate(
+                span="Paris",
+                source="a",
+                url="",
+                passage="Paris is in France.",
+                extraction_score=0.9,
+                rank=1,
+            )
+        ]
+
+        without_signal = self.scorer.score(
+            candidates, [], "where", question="Where is Paris?", enable_entailment=False
+        )
+        with patch("watson_lite.core.extractor.score_entailment", return_value=1.0):
+            with_signal = self.scorer.score(
+                candidates, [], "where", question="Where is Paris?"
+            )
+
+        assert with_signal.confidence > without_signal.confidence
+        assert with_signal.confidence_breakdown["textual_entailment"] == 1.0
+
     def test_doc_frequency_signal_increases_confidence(self) -> None:
         low = self.scorer.score(
             [

@@ -137,15 +137,13 @@ component is available.
 
 #### GAP-08 — No textual entailment component (Paper 1)
 
-**What DeepQA does:** A textual entailment scorer checked whether a passage
-logically implies that the candidate is the correct answer to the question.
+**Status: Implemented**
 
-**What watson-lite does:** The cross-encoder reranker (`ms-marco-MiniLM-L-6-v2`)
-measures passage–question relevance, which is the closest proxy, but it does not
-check passage → (candidate is the answer) entailment.
-
-**Where to fix:** New `scoring/entailment.py` — use a pretrained NLI model (e.g.,
-`cross-encoder/nli-deberta-v3-small`) to score `passage ⊨ "The answer to '<q>' is '<span>'"`.
+`scoring/entailment.py` adds a textual entailment scorer backed by a pretrained
+NLI cross-encoder (`cross-encoder/nli-deberta-v3-small`). `ConfidenceScorer`
+now computes an explicit entailment signal over top evidence passages using the
+hypothesis form `The answer to '<q>' is '<span>'`, and includes it in the final
+confidence breakdown and weighted score.
 
 ---
 
@@ -252,7 +250,7 @@ correct) triples; add a `train_from_log` utility that feeds them into the
 | 1 | GAP-01 offline index | High | Open |
 | 2 | GAP-03 learned scorer | Medium | Open |
 | 3 | GAP-10 confidence threshold / abstention | Low | Open |
-| 4 | GAP-08 textual entailment | Medium | Open |
+| 4 | GAP-08 textual entailment | Medium | Implemented |
 | 5 | GAP-09 source diversity | Low | Open |
 | 6 | GAP-11 domain ontologies | Low | Open |
 | 7 | GAP-14 UIMA dataflow | Low | Open |
