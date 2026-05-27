@@ -58,7 +58,7 @@ def patched_pipeline():
     - The QA transformers pipeline returns a fixed span.
     """
     with (
-        patch("watson_lite.pipeline.fetch_wikipedia_passages") as mock_fetch,
+        patch("watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages") as mock_fetch,
         patch("watson_lite.core.nlp.spacy") as mock_spacy,
         patch("watson_lite.retrieval.vector_retriever.SentenceTransformer") as mock_st,
         patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,

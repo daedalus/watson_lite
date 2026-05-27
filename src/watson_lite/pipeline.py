@@ -23,26 +23,10 @@ from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
 from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
-    fetch_arxiv_passages,
-    fetch_dbpedia_passages,
-    fetch_dbpedia_sparql_passages,
-    fetch_elasticsearch_passages,
-    fetch_huggingface_passages,
-    fetch_oeis_passages,
-    fetch_openlibrary_passages,
-    fetch_pubmed_passages,
-    fetch_stackexchange_passages,
-    fetch_wikibooks_passages,
-    fetch_wikinews_passages,
     fetch_wikipedia_page_by_title,
-    fetch_wikipedia_passages,
-    fetch_wikiquote_passages,
-    fetch_wikisource_passages,
 )
-from watson_lite.retrieval.dataset_query_engine import (
-    DatasetProvider,
-    DatasetQueryEngine,
-)
+from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
+from watson_lite.retrieval.dataset_query_engine import DatasetQueryEngine
 from watson_lite.retrieval.query_formulation import generate_search_queries
 from watson_lite.retrieval.vector_retriever import VectorRetriever
 from watson_lite.scoring.double_check import bidirectional_score
@@ -70,41 +54,9 @@ class WatsonLite:
         self.bm25 = BM25Retriever()
         self.nlp: NLPProcessor | None = None
         self.vector: VectorRetriever | None = None
+        self.dataset_plugins = build_dataset_plugin_registry(self.config)
         self.dataset_query_engine = DatasetQueryEngine(
-            providers=(
-                DatasetProvider("wikipedia", fetch_wikipedia_passages),
-                DatasetProvider("wikibooks", fetch_wikibooks_passages),
-                DatasetProvider("wikiquote", fetch_wikiquote_passages),
-                DatasetProvider("wikisource", fetch_wikisource_passages),
-                DatasetProvider("wikinews", fetch_wikinews_passages),
-                DatasetProvider("pubmed", fetch_pubmed_passages),
-                DatasetProvider("arxiv", fetch_arxiv_passages),
-                DatasetProvider("openlibrary", fetch_openlibrary_passages),
-                DatasetProvider("stackexchange", fetch_stackexchange_passages),
-                DatasetProvider("dbpedia", fetch_dbpedia_passages),
-                DatasetProvider("dbpedia_sparql", fetch_dbpedia_sparql_passages),
-                DatasetProvider("oeis", fetch_oeis_passages),
-                DatasetProvider(
-                    "elasticsearch",
-                    lambda query, *, top_k: fetch_elasticsearch_passages(
-                        query,
-                        top_k=top_k,
-                        base_url=self.config.elasticsearch_url,
-                        index=self.config.elasticsearch_index,
-                    ),
-                ),
-                DatasetProvider(
-                    "huggingface",
-                    lambda query, *, top_k: fetch_huggingface_passages(
-                        query,
-                        top_k=top_k,
-                        dataset=self.config.huggingface_dataset,
-                        config=self.config.huggingface_config,
-                        split=self.config.huggingface_split,
-                        token=self.config.huggingface_token,
-                    ),
-                ),
-            ),
+            providers=self.dataset_plugins.provider_tuple(),
             enabled_datasets=self.config.dataset_sources,
         )
         self.graph: WikidataGraph | None = None

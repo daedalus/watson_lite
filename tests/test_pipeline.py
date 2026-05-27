@@ -55,7 +55,9 @@ class TestWatsonLite:
         self.mock_scorer = MagicMock()
         self.mock_scorer_cls.return_value = self.mock_scorer
 
-        self.fetch_patcher = patch("watson_lite.pipeline.fetch_wikipedia_passages")
+        self.fetch_patcher = patch(
+            "watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages"
+        )
         self.mock_fetch = self.fetch_patcher.start()
         self.fetch_page_patcher = patch(
             "watson_lite.pipeline.fetch_wikipedia_page_by_title"
@@ -158,6 +160,11 @@ class TestWatsonLite:
             "oeis",
             "elasticsearch",
             "huggingface",
+        }.issubset(provider_names)
+        assert {
+            "wikipedia_offline",
+            "wikibooks_offline",
+            "huggingface_offline",
         }.issubset(provider_names)
 
     def test_empty_question_raises(self) -> None:

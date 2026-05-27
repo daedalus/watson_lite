@@ -93,6 +93,12 @@ watson-lite --datasets wikipedia,wikibooks "What is Python?"
 # Query additional public sources
 watson-lite --datasets wikiquote,wikisource,wikinews,pubmed,arxiv "What is Python?"
 
+# Query an offline corpus plugin counterpart
+watson-lite \
+  --datasets wikipedia_offline \
+  --offline-dataset-dir /path/to/offline-corpora \
+  "What is Python?"
+
 # Query Elasticsearch
 watson-lite \
   --datasets elasticsearch \
@@ -121,6 +127,12 @@ watson-lite \
   --regression-check \
   --max-accuracy-drop 0.02 \
   --max-f1-drop 0.02
+
+# Plugin management commands
+watson-lite plugins list
+watson-lite plugins list --mode offline
+watson-lite plugins describe wikipedia
+watson-lite plugins validate --datasets wikipedia,wikipedia_offline
 ```
 
 Benchmark dataset format (`.json` or `.jsonl`):
@@ -249,6 +261,14 @@ Dataset providers:
   - optional: `--huggingface-config`, `--huggingface-token`
   - env vars: `WATSON_LITE_HUGGINGFACE_DATASET`, `WATSON_LITE_HUGGINGFACE_SPLIT`, `WATSON_LITE_HUGGINGFACE_CONFIG`, `WATSON_LITE_HUGGINGFACE_TOKEN`
 
+Offline counterpart plugins:
+- every built-in online dataset plugin has a matching `*_offline` plugin
+  (`wikipedia_offline`, `pubmed_offline`, `huggingface_offline`, etc.)
+- each offline plugin reads local JSON/JSONL from:
+  - `--offline-dataset-dir /path/to/corpora` + `<dataset>.jsonl`
+  - or env var `WATSON_LITE_OFFLINE_<DATASET>_PATH`
+  - or env var `WATSON_LITE_OFFLINE_DATASET_DIR`
+
 ## Development
 
 ```bash
@@ -359,6 +379,43 @@ Total: ~670MB — runs CPU-only.
 
 ## Extending
 
-- **Add a domain corpus**: Plug a new provider into `DatasetQueryEngine`.
-- **Add more graph sources**: Wikidata REST API pattern is reusable.
-- **Offline mode**: Download Wikipedia dumps and index locally with BM25 + FAISS.
+### Dataset retriever plugins
+
+watson-lite loads dataset retrievers from built-ins and Python entry points in
+the `watson_lite.dataset_retrievers` group.
+
+Use the CLI to inspect what is currently available:
+
+```bash
+watson-lite plugins list
+watson-lite plugins describe wikipedia
+```
+
+Plugin contract:
+
+- export a `DatasetRetrieverPlugin` instance, or a callable returning one (or a tuple/list of them)
+- implement `fetcher(query: str, *, top_k: int) -> list[Passage]`
+- set a stable plugin `name`, `mode` (`online` or `offline`), and `description`
+
+Minimal package example (`pyproject.toml`):
+
+```toml
+[project.entry-points."watson_lite.dataset_retrievers"]
+my_domain = "my_package.my_plugins:build_plugins"
+```
+
+`my_package/my_plugins.py` should return plugin objects using
+`watson_lite.retrieval.dataset_plugins.DatasetRetrieverPlugin`.
+
+### Offline plugin datasets
+
+Built-in `*_offline` plugins read local JSON/JSONL files. Recommended JSONL row
+fields:
+
+- `text` (required)
+- `source` (optional)
+- `url` (optional)
+
+### Other extensions
+
+- Add more graph sources: Wikidata REST API pattern is reusable.

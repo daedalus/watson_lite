@@ -14,6 +14,7 @@ from watson_lite.evaluation.benchmark_runner import (
     run_benchmark_profiles,
 )
 from watson_lite.pipeline import WatsonLite
+from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
 
 try:
     _VERSION = pkg_version("watson-lite")
@@ -140,6 +141,15 @@ def _add_dataset_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Hugging Face auth token (optional, used for private/gated datasets)",
     )
+    parser.add_argument(
+        "--offline-dataset-dir",
+        type=str,
+        default=None,
+        help=(
+            "Base directory for offline dataset files named <dataset>.jsonl "
+            "(used by *_offline dataset plugins)"
+        ),
+    )
 
 
 def _add_benchmark_args(parser: argparse.ArgumentParser) -> None:
@@ -220,6 +230,7 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "huggingface_config": args.huggingface_config,
         "huggingface_split": args.huggingface_split,
         "huggingface_token": args.huggingface_token,
+        "offline_dataset_dir": args.offline_dataset_dir,
         "wikipedia_top_k_per_query": args.wiki_top_k,
         "retrieval_top_k": args.retrieval_top_k,
         "rerank_top_k": args.rerank_top_k,
@@ -397,7 +408,87 @@ def _setup_logging(args: argparse.Namespace) -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
 
+def _build_plugins_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="watson-lite plugins")
+    subparsers = parser.add_subparsers(dest="plugins_command", required=True)
+    list_parser = subparsers.add_parser("list", help="List registered dataset plugins")
+    list_parser.add_argument(
+        "--mode",
+        choices=("all", "online", "offline"),
+        default="all",
+        help="Filter plugins by mode",
+    )
+    list_parser.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Render plugin list as text or JSON",
+    )
+
+    describe_parser = subparsers.add_parser(
+        "describe", help="Describe one registered dataset plugin"
+    )
+    describe_parser.add_argument("name", type=str, help="Plugin name")
+
+    validate_parser = subparsers.add_parser(
+        "validate", help="Validate dataset names against registered plugins"
+    )
+    validate_parser.add_argument("--datasets", type=_parse_datasets, required=True)
+    return parser
+
+
+def _run_plugins_command(argv: list[str]) -> int:
+    parser = _build_plugins_parser()
+    args = parser.parse_args(argv)
+    registry = build_dataset_plugin_registry(FeatureConfig.baseline())
+
+    if args.plugins_command == "list":
+        mode = None if args.mode == "all" else args.mode
+        plugins = registry.list(mode=mode)
+        if args.output == "json":
+            payload = [
+                {
+                    "name": item.name,
+                    "mode": item.mode,
+                    "source": item.source,
+                    "description": item.description,
+                }
+                for item in plugins
+            ]
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        for item in plugins:
+            print(
+                f"{item.name}\tmode={item.mode}\tsource={item.source}\t{item.description}"
+            )
+        return 0
+
+    if args.plugins_command == "describe":
+        plugin = registry.get(args.name)
+        if plugin is None:
+            print(f"Unknown plugin: {args.name}")
+            return 1
+        print(f"name: {plugin.name}")
+        print(f"mode: {plugin.mode}")
+        print(f"source: {plugin.source}")
+        print(f"description: {plugin.description}")
+        return 0
+
+    if args.plugins_command == "validate":
+        missing = registry.missing(args.datasets)
+        if missing:
+            print(f"Unknown plugins: {', '.join(missing)}")
+            return 1
+        print("All plugins are available.")
+        return 0
+
+    return 1
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "plugins":
+        return _run_plugins_command(sys.argv[2:])
+
     parser = _build_parser()
     args = parser.parse_args(sys.argv[1:])
     _setup_logging(args)
