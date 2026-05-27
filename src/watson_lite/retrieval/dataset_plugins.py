@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import partial
 from importlib.metadata import entry_points
-from typing import TYPE_CHECKING, Iterable, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from watson_lite.retrieval.bm25_retriever import (
     fetch_arxiv_passages,
@@ -22,7 +24,9 @@ from watson_lite.retrieval.bm25_retriever import (
     fetch_wikisource_passages,
 )
 from watson_lite.retrieval.dataset_query_engine import DatasetProvider
-from watson_lite.retrieval.offline_dataset_retriever import fetch_offline_dataset_passages
+from watson_lite.retrieval.offline_dataset_retriever import (
+    fetch_offline_dataset_passages,
+)
 
 if TYPE_CHECKING:
     from watson_lite.core.config import FeatureConfig
@@ -197,9 +201,8 @@ def _builtin_offline_plugins(config: FeatureConfig) -> tuple[DatasetRetrieverPlu
                     f"Offline local retriever for '{dataset_name}' "
                     "(JSON/JSONL corpus file)"
                 ),
-                fetcher=lambda query, *, top_k, dataset_name=dataset_name: fetch_offline_dataset_passages(
-                    query,
-                    top_k=top_k,
+                fetcher=partial(
+                    fetch_offline_dataset_passages,
                     dataset_name=dataset_name,
                     base_dir=config.offline_dataset_dir,
                 ),
@@ -228,16 +231,15 @@ def _coerce_external_plugins(
 def _load_external_plugins() -> tuple[DatasetRetrieverPlugin, ...]:
     loaded_plugins: list[DatasetRetrieverPlugin] = []
     entry_point_collection = entry_points()
-    selected = (
-        entry_point_collection.select(group=_PLUGIN_ENTRYPOINT_GROUP)
-        if hasattr(entry_point_collection, "select")
-        else entry_point_collection.get(_PLUGIN_ENTRYPOINT_GROUP, [])
-    )
+    if hasattr(entry_point_collection, "select"):
+        selected = tuple(entry_point_collection.select(group=_PLUGIN_ENTRYPOINT_GROUP))
+    else:
+        selected = ()
     for plugin_entry_point in selected:
         try:
             loaded = plugin_entry_point.load()
             value = loaded() if callable(loaded) else loaded
-        except Exception as err:  # pragma: no cover - defensive plugin loading
+        except (AttributeError, ImportError, TypeError) as err:
             logger.warning(
                 "Failed loading dataset plugin entry point '%s': %s",
                 plugin_entry_point.name,
@@ -257,4 +259,3 @@ def build_dataset_plugin_registry(config: FeatureConfig) -> DatasetPluginRegistr
         *_load_external_plugins(),
     )
     return DatasetPluginRegistry(tuple(plugins))
-

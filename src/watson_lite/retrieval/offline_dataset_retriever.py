@@ -63,7 +63,7 @@ def _extract_field(payload: dict[str, Any], keys: tuple[str, ...], default: str)
 def _load_json_payload(path: Path) -> list[dict[str, Any]]:
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as err:  # pragma: no cover - defensive parse guard
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         logger.warning("Offline dataset parse failed for '%s': %s", path, err)
         return []
     if isinstance(loaded, list):
@@ -85,7 +85,7 @@ def _load_jsonl_payload(path: Path) -> list[dict[str, Any]]:
             parsed = json.loads(stripped)
             if isinstance(parsed, dict):
                 rows.append(parsed)
-    except Exception as err:  # pragma: no cover - defensive parse guard
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         logger.warning("Offline dataset parse failed for '%s': %s", path, err)
         return []
     return rows
@@ -168,4 +168,3 @@ def fetch_offline_dataset_passages(
             )
         )
     return ranked
-

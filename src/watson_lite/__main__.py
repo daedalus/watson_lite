@@ -448,18 +448,18 @@ def _run_plugins_command(argv: list[str]) -> int:
         if args.output == "json":
             payload = [
                 {
-                    "name": plugin.name,
-                    "mode": plugin.mode,
-                    "source": plugin.source,
-                    "description": plugin.description,
+                    "name": item.name,
+                    "mode": item.mode,
+                    "source": item.source,
+                    "description": item.description,
                 }
-                for plugin in plugins
+                for item in plugins
             ]
             print(json.dumps(payload, indent=2, sort_keys=True))
             return 0
-        for plugin in plugins:
+        for item in plugins:
             print(
-                f"{plugin.name}\tmode={plugin.mode}\tsource={plugin.source}\t{plugin.description}"
+                f"{item.name}\tmode={item.mode}\tsource={item.source}\t{item.description}"
             )
         return 0
 

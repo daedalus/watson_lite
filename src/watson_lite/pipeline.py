@@ -21,7 +21,10 @@ from watson_lite.core.models import (
 from watson_lite.core.nlp import NLPProcessor
 from watson_lite.graph.wikidata import WikidataGraph
 from watson_lite.ranking.ranker import Ranker
-from watson_lite.retrieval.bm25_retriever import BM25Retriever, fetch_wikipedia_page_by_title
+from watson_lite.retrieval.bm25_retriever import (
+    BM25Retriever,
+    fetch_wikipedia_page_by_title,
+)
 from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
 from watson_lite.retrieval.dataset_query_engine import DatasetQueryEngine
 from watson_lite.retrieval.query_formulation import generate_search_queries
