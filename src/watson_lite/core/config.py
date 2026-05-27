@@ -39,6 +39,10 @@ class FeatureConfig:
     max_retrieval_passes: int = 2
     iterative_retrieval_threshold: float = 0.3
     confidence_threshold: float | None = None
+    spacy_model: str | None = None
+    embed_model: str | None = None
+    cross_encoder_model: str | None = None
+    nli_model: str | None = None
 
     @classmethod
     def baseline(cls) -> FeatureConfig:

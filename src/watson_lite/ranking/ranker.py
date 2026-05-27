@@ -14,7 +14,7 @@ from watson_lite.core.models import Passage, RankedPassage
 logger = logging.getLogger(__name__)
 
 RRF_K = 60
-CROSS_ENCODER_MODEL = "cross-encoder/stsb-distilroberta-base"
+CROSS_ENCODER_MODEL: str = "cross-encoder/stsb-distilroberta-base"
 
 
 class RRFFusion:
@@ -80,9 +80,19 @@ class CrossEncoderReranker:
 
 
 class Ranker:
-    def __init__(self, *, enable_cross_encoder: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        enable_cross_encoder: bool = True,
+        cross_encoder_model: str | None = None,
+    ) -> None:
         self.rrf = RRFFusion()
-        self.cross_encoder = CrossEncoderReranker() if enable_cross_encoder else None
+        self._ce_model = cross_encoder_model or CROSS_ENCODER_MODEL
+        self.cross_encoder = (
+            CrossEncoderReranker(model_name=self._ce_model)
+            if enable_cross_encoder
+            else None
+        )
 
     def rank(  # pylint: disable=too-many-arguments
         self,
@@ -117,7 +127,7 @@ class Ranker:
             return ranked
 
         if self.cross_encoder is None:
-            self.cross_encoder = CrossEncoderReranker()
+            self.cross_encoder = CrossEncoderReranker(model_name=self._ce_model)
 
         candidates = fused[:50]
         ranked = self.cross_encoder.rerank(query, candidates, top_k=top_k)

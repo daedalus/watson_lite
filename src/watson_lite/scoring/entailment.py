@@ -20,6 +20,13 @@ _ENTAILMENT_SCORER: TextualEntailmentScorer | None = None
 _ENTAILMENT_UNAVAILABLE = False
 
 
+def configure_entailment_model(model_name: str) -> None:
+    global ENTAILMENT_MODEL, _ENTAILMENT_SCORER, _ENTAILMENT_UNAVAILABLE
+    ENTAILMENT_MODEL = model_name
+    _ENTAILMENT_SCORER = None
+    _ENTAILMENT_UNAVAILABLE = False
+
+
 def _clamp_probability(value: float) -> float:
     """Clamp a value to the closed probability interval [0, 1]."""
     return max(0.0, min(value, 1.0))

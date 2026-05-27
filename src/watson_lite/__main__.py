@@ -293,6 +293,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_benchmark_args(parser)
     parser.add_argument(
+        "--spacy-model",
+        type=str,
+        default=None,
+        help="spaCy model name (default: auto-selected by language)",
+    )
+    parser.add_argument(
+        "--embed-model",
+        type=str,
+        default=None,
+        help="SentenceTransformer embedding model (default: paraphrase-multilingual-MiniLM-L12-v2)",
+    )
+    parser.add_argument(
+        "--ce-model",
+        dest="cross_encoder_model",
+        type=str,
+        default=None,
+        help="Cross-encoder model for reranking (default: cross-encoder/stsb-distilroberta-base)",
+    )
+    parser.add_argument(
+        "--nli-model",
+        type=str,
+        default=None,
+        help="NLI model for textual entailment (default: cross-encoder/nli-deberta-v3-small)",
+    )
+    parser.add_argument(
         "--device", type=int, default=-1, help="Torch device index (-1 = CPU, 0+ = GPU)"
     )
     parser.add_argument(
@@ -348,6 +373,10 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "bidirectional_validation",
         "iterative_retrieval",
         "semantic_nlp",
+        "spacy_model",
+        "embed_model",
+        "cross_encoder_model",
+        "nli_model",
     ):
         value = getattr(args, name)
         if value is not None:

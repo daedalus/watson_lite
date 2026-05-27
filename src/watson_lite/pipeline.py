@@ -31,8 +31,9 @@ from watson_lite.retrieval.bm25_retriever import (
 from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
 from watson_lite.retrieval.dataset_query_engine import DatasetQueryEngine
 from watson_lite.retrieval.query_formulation import generate_search_queries
-from watson_lite.retrieval.vector_retriever import VectorRetriever
+from watson_lite.retrieval.vector_retriever import EMBED_MODEL, VectorRetriever
 from watson_lite.scoring.double_check import bidirectional_score
+from watson_lite.scoring.entailment import configure_entailment_model
 
 logger = logging.getLogger(__name__)
 _NON_WORD = re.compile(r"\W+")
@@ -68,6 +69,8 @@ class WatsonLite:
         self.scorer = ConfidenceScorer(
             confidence_threshold=self.config.confidence_threshold
         )
+        if self.config.nli_model is not None:
+            configure_entailment_model(self.config.nli_model)
         # Per-passage content-addressable cache: key = _passage_content_key
         self._passage_cache: dict[str, Passage] = {}
         self._index_loaded = False
@@ -98,7 +101,9 @@ class WatsonLite:
     def _get_nlp(self, language: str = "en") -> NLPProcessor:
         if language not in self._nlp_cache:
             self._nlp_cache[language] = NLPProcessor(
-                language=language, semantic_nlp=self.config.semantic_nlp
+                model=self.config.spacy_model,
+                language=language,
+                semantic_nlp=self.config.semantic_nlp,
             )
         return self._nlp_cache[language]
 
@@ -106,7 +111,9 @@ class WatsonLite:
         if not self.config.vector_retrieval:
             return None
         if self.vector is None:
-            self.vector = VectorRetriever()
+            self.vector = VectorRetriever(
+                model_name=self.config.embed_model or EMBED_MODEL
+            )
         return self.vector
 
     def _get_graph(self) -> WikidataGraph:
@@ -117,7 +124,8 @@ class WatsonLite:
     def _get_ranker(self) -> Ranker:
         if self.ranker is None:
             self.ranker = Ranker(
-                enable_cross_encoder=self.config.cross_encoder_reranking
+                enable_cross_encoder=self.config.cross_encoder_reranking,
+                cross_encoder_model=self.config.cross_encoder_model,
             )
         return self.ranker
 
