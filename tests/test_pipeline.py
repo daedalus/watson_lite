@@ -154,6 +154,7 @@ class TestWatsonLite:
             "openlibrary",
             "stackexchange",
             "dbpedia",
+            "dbpedia_sparql",
             "oeis",
             "elasticsearch",
             "huggingface",

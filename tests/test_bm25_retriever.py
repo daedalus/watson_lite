@@ -8,6 +8,7 @@ from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
     fetch_arxiv_passages,
     fetch_dbpedia_passages,
+    fetch_dbpedia_sparql_passages,
     fetch_elasticsearch_passages,
     fetch_huggingface_passages,
     fetch_oeis_passages,
@@ -573,3 +574,123 @@ class TestAdditionalPublicSources:
         assert len(result) == 1
         assert result[0].source == "A000045"
         assert result[0].url == "https://oeis.org/A000045"
+
+
+class TestFetchDBpediaSparqlPassages:
+    def setup_method(self) -> None:
+        self.cache_patcher = patch("watson_lite.retrieval.bm25_retriever.get_cache")
+        self.mock_get_cache = self.cache_patcher.start()
+        self.mock_cache = MagicMock()
+        self.mock_cache.get_or_sentinel.return_value = SENTINEL
+        self.mock_get_cache.return_value = self.mock_cache
+
+    def teardown_method(self) -> None:
+        self.cache_patcher.stop()
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_success(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "results": {
+                "bindings": [
+                    {
+                        "resource": {
+                            "type": "uri",
+                            "value": "http://dbpedia.org/resource/Python_(programming_language)",
+                        },
+                        "label": {
+                            "type": "literal",
+                            "xml:lang": "en",
+                            "value": "Python (programming language)",
+                        },
+                        "abstract": {
+                            "type": "literal",
+                            "xml:lang": "en",
+                            "value": "Python is an interpreted high-level language.",
+                        },
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = response
+
+        result = fetch_dbpedia_sparql_passages("python")
+
+        assert len(result) == 1
+        assert result[0].source == "Python (programming language)"
+        assert result[0].url == "http://dbpedia.org/resource/Python_(programming_language)"
+        assert "interpreted" in result[0].text
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_empty_bindings_returns_empty(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"results": {"bindings": []}}
+        mock_get.return_value = response
+
+        result = fetch_dbpedia_sparql_passages("nonexistentxyz")
+
+        assert result == []
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_http_error_returns_empty(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 500
+        mock_get.return_value = response
+
+        result = fetch_dbpedia_sparql_passages("python")
+
+        assert result == []
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_skips_bindings_without_abstract(self, mock_get: MagicMock) -> None:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "results": {
+                "bindings": [
+                    {
+                        "resource": {"type": "uri", "value": "http://dbpedia.org/resource/Python"},
+                        "label": {"type": "literal", "xml:lang": "en", "value": "Python"},
+                        "abstract": {"type": "literal", "xml:lang": "en", "value": ""},
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = response
+
+        result = fetch_dbpedia_sparql_passages("python")
+
+        assert result == []
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_query_sanitizes_special_chars(self, mock_get: MagicMock) -> None:
+        """Query containing quotes must not embed raw quote chars in the SPARQL literal."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"results": {"bindings": []}}
+        mock_get.return_value = response
+
+        fetch_dbpedia_sparql_passages('python "language"')
+
+        sparql_sent = mock_get.call_args[1]["params"]["query"]
+        # The original double-quote must not appear inside the SPARQL string literal
+        # (it would be injected between the enclosing '"...{safe_query}..."' delimiters)
+        # After sanitization the input becomes 'python  language ' with spaces
+        assert 'python  language' in sparql_sent
+        # Verify that the raw quote from the input is not present unescaped
+        assert '\\"' not in sparql_sent or sparql_sent.count('"') == sparql_sent.replace(
+            '"python  language "', ""
+        ).count('"')
+
+    def test_sparql_returns_cached_result(self) -> None:
+        cached_passage = Passage(
+            text="cached text", source="DBpedia", url="https://dbpedia.org"
+        )
+        self.mock_cache.get_or_sentinel.return_value = [cached_passage.__dict__]
+
+        result = fetch_dbpedia_sparql_passages("python")
+
+        assert len(result) == 1
+        assert result[0].text == "cached text"

@@ -25,6 +25,7 @@ from watson_lite.retrieval.bm25_retriever import (
     BM25Retriever,
     fetch_arxiv_passages,
     fetch_dbpedia_passages,
+    fetch_dbpedia_sparql_passages,
     fetch_elasticsearch_passages,
     fetch_huggingface_passages,
     fetch_oeis_passages,
@@ -81,6 +82,7 @@ class WatsonLite:
                 DatasetProvider("openlibrary", fetch_openlibrary_passages),
                 DatasetProvider("stackexchange", fetch_stackexchange_passages),
                 DatasetProvider("dbpedia", fetch_dbpedia_passages),
+                DatasetProvider("dbpedia_sparql", fetch_dbpedia_sparql_passages),
                 DatasetProvider("oeis", fetch_oeis_passages),
                 DatasetProvider(
                     "elasticsearch",
