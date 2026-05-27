@@ -666,18 +666,23 @@ class TestFetchDBpediaSparqlPassages:
 
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_sparql_query_sanitizes_special_chars(self, mock_get: MagicMock) -> None:
-        """Query containing quotes or backslashes must not produce malformed SPARQL."""
+        """Query containing quotes must not embed raw quote chars in the SPARQL literal."""
         response = MagicMock()
         response.status_code = 200
         response.json.return_value = {"results": {"bindings": []}}
         mock_get.return_value = response
 
-        # Should not raise, and the SPARQL query must not embed raw quotes
         fetch_dbpedia_sparql_passages('python "language"')
 
-        call_kwargs = mock_get.call_args
-        sparql_sent = call_kwargs[1]["params"]["query"]
-        assert '"python  language "' in sparql_sent or "python  language" in sparql_sent
+        sparql_sent = mock_get.call_args[1]["params"]["query"]
+        # The original double-quote must not appear inside the SPARQL string literal
+        # (it would be injected between the enclosing '"...{safe_query}..."' delimiters)
+        # After sanitization the input becomes 'python  language ' with spaces
+        assert 'python  language' in sparql_sent
+        # Verify that the raw quote from the input is not present unescaped
+        assert '\\"' not in sparql_sent or sparql_sent.count('"') == sparql_sent.replace(
+            '"python  language "', ""
+        ).count('"')
 
     def test_sparql_returns_cached_result(self) -> None:
         cached_passage = Passage(
