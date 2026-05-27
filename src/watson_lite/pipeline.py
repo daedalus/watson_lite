@@ -234,27 +234,18 @@ class WatsonLite:
         stage_t0: float,
         verbose: bool,
     ) -> tuple[int, list[Passage], list[Passage], float] | None:
+        if self._index_loaded and not self.config.query_expansion:
+            queries = [question]
+        else:
+            queries = self._generate_queries(parsed)
+
         if self._index_loaded:
-            passages = list(self._passage_cache.values())
-            bm25_results = self.bm25.retrieve(
-                question, top_k=self.config.retrieval_top_k
-            )
-            vector_results = (
-                self.vector.retrieve(question, top_k=self.config.retrieval_top_k)
-                if self.vector is not None
-                else []
-            )
-            elapsed = round(time.perf_counter() - stage_t0, 4)
             self._log_detail(
                 verbose,
-                "Pre-built index: %d total passages",
-                len(passages),
+                "Pre-built index available (%d passages); fetching online for completeness",
+                len(self._passage_cache),
             )
-            if not passages:
-                return None
-            return len(passages), bm25_results, vector_results, elapsed
 
-        queries = self._generate_queries(parsed)
         self._log_detail(verbose, "Search queries: %s", queries)
 
         all_passages: list[Passage] = []
