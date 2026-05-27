@@ -149,15 +149,15 @@ confidence breakdown and weighted score.
 
 #### GAP-09 — Limited source diversity (Papers 1, 3)
 
-**What DeepQA does:** 20+ corpora including encyclopedia, newswire, Gutenberg
-books, DBpedia, WordNet, and domain-specific databases.
+**Status: Implemented**
 
-**What watson-lite does:** Wikipedia + Wikibooks REST APIs are wired in by
-default; Wikidata for structured facts.  `DatasetQueryEngine` is pluggable, but
-no additional providers are bundled.
-
-**Where to fix:** `retrieval/dataset_query_engine.py` — add provider
-implementations for Wikisource, OpenLibrary, and simple DBpedia SPARQL queries.
+`retrieval/bm25_retriever.py` now bundles provider implementations for
+Wikisource, OpenLibrary, Wikinews, Wikiquote, PubMed, arXiv, StackExchange,
+OEIS, the DBpedia Lookup API (`dbpedia`), and a dedicated DBpedia SPARQL
+provider (`dbpedia_sparql`) that queries the public `https://dbpedia.org/sparql`
+endpoint for English-language resource abstracts.  All providers are registered
+as `DatasetProvider` instances in `pipeline.py` and are selectable via the
+`dataset_sources` configuration field.
 
 ---
 
@@ -251,7 +251,7 @@ correct) triples; add a `train_from_log` utility that feeds them into the
 | 2 | GAP-03 learned scorer | Medium | Open |
 | 3 | GAP-10 confidence threshold / abstention | Low | Open |
 | 4 | GAP-08 textual entailment | Medium | Implemented |
-| 5 | GAP-09 source diversity | Low | Open |
+| 5 | GAP-09 source diversity | Low | Implemented |
 | 6 | GAP-11 domain ontologies | Low | Open |
 | 7 | GAP-14 UIMA dataflow | Low | Open |
 | 8 | GAP-15 learning from feedback | Low | Open |

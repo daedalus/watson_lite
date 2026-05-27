@@ -26,6 +26,7 @@ ARXIV_API = "https://export.arxiv.org/api/query"
 OPENLIBRARY_SEARCH_API = "https://openlibrary.org/search.json"
 STACKEXCHANGE_SEARCH_API = "https://api.stackexchange.com/2.3/search/advanced"
 DBPEDIA_LOOKUP_API = "https://lookup.dbpedia.org/api/search"
+DBPEDIA_SPARQL_ENDPOINT = "https://dbpedia.org/sparql"
 OEIS_SEARCH_API = "https://oeis.org/search"
 WIKI_SEARCH_LIMIT = 5
 ELASTICSEARCH_URL_ENV = "WATSON_LITE_ELASTICSEARCH_URL"
@@ -1186,6 +1187,107 @@ def fetch_dbpedia_passages(
             seen_chunks,
             text=text,
             source=source or "DBpedia",
+            url=url or "https://dbpedia.org",
+        )
+
+    cache.set(cache_key, [p.__dict__ for p in passages])
+    logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
+    return passages
+
+
+def fetch_dbpedia_sparql_passages(
+    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
+) -> list[Passage]:
+    """Fetch passages from DBpedia via SPARQL abstract queries.
+
+    Runs a SPARQL SELECT against the public DBpedia endpoint and returns
+    the English-language abstracts of matching resources as Passage objects.
+    """
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"dbpedia_sparql:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    # Sanitize to avoid SPARQL injection via the string literal
+    safe_query = re.sub(r'["\'\\]', " ", normalized_query).strip()
+    sparql = (
+        "PREFIX dbo: <http://dbpedia.org/ontology/> "
+        "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+        "SELECT DISTINCT ?resource ?label ?abstract WHERE { "
+        "  ?resource rdfs:label ?label . "
+        "  ?resource dbo:abstract ?abstract . "
+        "  FILTER(lang(?abstract) = 'en') "
+        "  FILTER(lang(?label) = 'en') "
+        f'  FILTER(CONTAINS(LCASE(str(?label)), "{safe_query}")) '
+        f"}} LIMIT {top_k}"
+    )
+
+    try:
+        response = requests.get(
+            DBPEDIA_SPARQL_ENDPOINT,
+            params={"query": sparql, "format": "application/sparql-results+json"},
+            headers=WIKI_HEADERS,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as err:  # pragma: no cover - defensive network isolation
+        logger.warning("DBpedia SPARQL request failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    if response.status_code >= 400:
+        logger.warning(
+            "DBpedia SPARQL request failed: HTTP %s", int(response.status_code)
+        )
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    try:
+        payload = response.json()
+    except Exception as err:  # pragma: no cover - defensive parsing guard
+        logger.warning("DBpedia SPARQL response parse failed: %s", err)
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    bindings = (
+        payload.get("results", {}).get("bindings", [])
+        if isinstance(payload, dict)
+        else []
+    )
+    if not isinstance(bindings, list):
+        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
+        return []
+
+    passages: list[Passage] = []
+    seen_chunks: set[str] = set()
+    for binding in bindings:
+        if not isinstance(binding, dict):
+            continue
+        label_node = binding.get("label", {})
+        abstract_node = binding.get("abstract", {})
+        resource_node = binding.get("resource", {})
+        label = _stringify(
+            label_node.get("value") if isinstance(label_node, dict) else label_node
+        )
+        abstract = _stringify(
+            abstract_node.get("value")
+            if isinstance(abstract_node, dict)
+            else abstract_node
+        )
+        url = _stringify(
+            resource_node.get("value")
+            if isinstance(resource_node, dict)
+            else resource_node
+        )
+        if not abstract:
+            continue
+        _append_deduped_passage(
+            passages,
+            seen_chunks,
+            text=abstract,
+            source=label or "DBpedia",
             url=url or "https://dbpedia.org",
         )
 
