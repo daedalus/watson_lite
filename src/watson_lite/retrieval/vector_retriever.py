@@ -29,7 +29,7 @@ from watson_lite.core.models import Passage
 
 logger = logging.getLogger(__name__)
 
-EMBED_MODEL = "all-MiniLM-L6-v2"
+EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class VectorRetriever:

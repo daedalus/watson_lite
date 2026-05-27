@@ -6,6 +6,8 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import cast
 
+import langdetect
+
 from watson_lite.core.cache import CacheMetrics, get_cache_metrics_snapshot
 from watson_lite.core.config import FeatureConfig
 from watson_lite.core.extractor import ConfidenceScorer, ExtractiveReader
@@ -69,6 +71,7 @@ class WatsonLite:
         # Per-passage content-addressable cache: key = _passage_content_key
         self._passage_cache: dict[str, Passage] = {}
         self._index_loaded = False
+        self._nlp_cache: dict[str, NLPProcessor] = {}
         self._load_prebuilt_index()
         logger.info("Core components loaded. Heavy models will load lazily.")
 
@@ -92,10 +95,12 @@ class WatsonLite:
                 logger.warning("Vector dependencies missing; skipping FAISS index load")
         self._index_loaded = True
 
-    def _get_nlp(self) -> NLPProcessor:
-        if self.nlp is None:
-            self.nlp = NLPProcessor(semantic_nlp=self.config.semantic_nlp)
-        return self.nlp
+    def _get_nlp(self, language: str = "en") -> NLPProcessor:
+        if language not in self._nlp_cache:
+            self._nlp_cache[language] = NLPProcessor(
+                language=language, semantic_nlp=self.config.semantic_nlp
+            )
+        return self._nlp_cache[language]
 
     def _get_vector(self) -> VectorRetriever | None:
         if not self.config.vector_retrieval:
@@ -419,9 +424,14 @@ class WatsonLite:
         stage_latencies: dict[str, float] = {}
         cache_before = get_cache_metrics_snapshot()
 
+        try:
+            language = langdetect.detect(question)
+        except Exception:
+            language = "en"
+
         self._log_step(verbose, 1, "NLP preprocessing...")
         stage_t0 = time.perf_counter()
-        parsed = self._get_nlp().process(
+        parsed = self._get_nlp(language).process(
             question, semantic_nlp=self.config.semantic_nlp
         )
         stage_latencies["nlp"] = round(time.perf_counter() - stage_t0, 4)

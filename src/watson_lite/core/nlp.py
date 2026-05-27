@@ -194,17 +194,39 @@ def _extract_srl_frames(doc: Doc) -> list[dict[str, str]]:  # pragma: no cover
     return frames
 
 
+def _spacy_model_for_language(language: str) -> str:
+    """Derive the spaCy model name from a langdetect language code."""
+    if language == "en":
+        return "en_core_web_sm"
+    return f"{language}_core_news_sm"
+
+
 class NLPProcessor:
     def __init__(
-        self, model: str = "en_core_web_sm", semantic_nlp: bool = False
+        self,
+        model: str | None = None,
+        language: str = "en",
+        semantic_nlp: bool = False,
     ) -> None:
         if spacy is None:
             raise ImportError(
                 "spaCy is required for NLP processing. "
                 "Install watson-lite with the 'nlp' or 'full' extra."
             ) from _SPACY_IMPORT_ERROR
-        logger.debug("Loading spaCy model: %s", model)
-        self.nlp = spacy.load(model)
+        if model is None:
+            model = _spacy_model_for_language(language)
+        try:
+            logger.debug("Loading spaCy model: %s (language=%s)", model, language)
+            self.nlp = spacy.load(model)
+        except OSError:
+            logger.warning(
+                "spaCy model %s not found for language %s, falling back to English",
+                model,
+                language,
+            )
+            self.nlp = spacy.load("en_core_web_sm")
+            language = "en"
+        self.language = language
         self.semantic_nlp = semantic_nlp
         self._has_coreferee = False
         try:
@@ -215,6 +237,8 @@ class NLPProcessor:
             self._has_coreferee = True
 
     def classify_question(self, text: str) -> str:
+        if self.language != "en":
+            return "unknown"
         first = text.strip().lower().split()[0] if text.strip() else ""
         for qtype, triggers in QUESTION_TYPES.items():
             if first in triggers:
@@ -249,6 +273,8 @@ class NLPProcessor:
         return None
 
     def decompose_question(self, text: str) -> list[str]:
+        if self.language != "en":
+            return [text]
         doc = self.nlp(text)
         sub_questions: list[str] = []
         current: list[str] = []

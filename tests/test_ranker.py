@@ -58,7 +58,7 @@ class TestCrossEncoderReranker:
 
     def test_init_loads_model(self) -> None:
         self.mock_ce_cls.assert_called_once_with(
-            "cross-encoder/ms-marco-MiniLM-L6-v2", max_length=512
+            "cross-encoder/stsb-distilroberta-base", max_length=512
         )
 
     def test_rerank_empty(self) -> None:

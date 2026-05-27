@@ -14,7 +14,7 @@ from watson_lite.core.models import Passage, RankedPassage
 logger = logging.getLogger(__name__)
 
 RRF_K = 60
-CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+CROSS_ENCODER_MODEL = "cross-encoder/stsb-distilroberta-base"
 
 
 class RRFFusion:
@@ -93,7 +93,6 @@ class Ranker:
         *,
         use_cross_encoder: bool = True,
     ) -> list[RankedPassage]:
-
         logger.debug(
             "Fusing %d BM25 + %d vector results",
             len(bm25_results),

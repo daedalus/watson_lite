@@ -30,7 +30,9 @@ class TestVectorRetriever:
         self.faiss_patcher.stop()
 
     def test_init_loads_model(self) -> None:
-        self.mock_st_cls.assert_called_once_with("all-MiniLM-L6-v2")
+        self.mock_st_cls.assert_called_once_with(
+            "paraphrase-multilingual-MiniLM-L12-v2"
+        )
         assert self.retriever.dim == 384
         assert self.retriever.index is None
         assert self.retriever.passages == []
