@@ -1,4 +1,5 @@
 """Tests for watson_lite.evaluation.benchmarks.triviaqa."""
+
 from __future__ import annotations
 
 import io
@@ -135,7 +136,9 @@ class TestDownloadTriviaQA:
         ):
             mock_dl.side_effect = lambda url, path, **kw: path
 
-            samples = download_triviaqa(str(output), split="dev", download_dir=str(tmp_path))
+            samples = download_triviaqa(
+                str(output), split="dev", download_dir=str(tmp_path)
+            )
 
         assert isinstance(samples, list)
         assert len(samples) == 2
@@ -155,7 +158,9 @@ class TestDownloadTriviaQA:
         ):
             mock_dl.side_effect = lambda url, path, **kw: path
 
-            samples = download_triviaqa(str(output), split="test", download_dir=str(tmp_path))
+            samples = download_triviaqa(
+                str(output), split="test", download_dir=str(tmp_path)
+            )
 
         assert isinstance(samples, list)
 

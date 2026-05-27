@@ -42,7 +42,9 @@ class TestTextualEntailmentScorer:
             mock_ce.return_value = mock_model
             scorer = TextualEntailmentScorer()
 
-        score = scorer.score("What is the capital of France?", "Paris", ["Paris is in France."])
+        score = scorer.score(
+            "What is the capital of France?", "Paris", ["Paris is in France."]
+        )
         assert score > 0.8
 
     def test_score_returns_zero_for_empty_inputs(self) -> None:
@@ -65,4 +67,6 @@ def test_score_entailment_returns_zero_when_import_missing() -> None:
         patch("watson_lite.scoring.entailment._ENTAILMENT_SCORER", None),
         patch("watson_lite.scoring.entailment._ENTAILMENT_UNAVAILABLE", False),
     ):
-        assert score_entailment("Where is Paris?", "Paris", ["Paris is in France."]) == 0.0
+        assert (
+            score_entailment("Where is Paris?", "Paris", ["Paris is in France."]) == 0.0
+        )

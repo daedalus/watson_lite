@@ -358,6 +358,36 @@ def _evaluate_labeled(
     )
 
 
+from collections.abc import Callable
+
+
+def _count(predicate: Callable[[FinalAnswer], bool], items: list[FinalAnswer]) -> int:
+    return sum(1 for a in items if predicate(a))
+
+
+def _cache_rates(answers: list[FinalAnswer]) -> float:
+    hits = sum(a.diagnostics.cache_hits for a in answers if a.diagnostics is not None)
+    misses = sum(
+        a.diagnostics.cache_misses for a in answers if a.diagnostics is not None
+    )
+    total = hits + misses
+    return (hits / total) if total else 0.0
+
+
+def _stage_latency_mean(answers: list[FinalAnswer]) -> dict[str, float]:
+    series: dict[str, list[float]] = {}
+    for answer in answers:
+        if answer.diagnostics is None:
+            continue
+        for stage, value in answer.diagnostics.stage_latencies_s.items():
+            series.setdefault(stage, []).append(float(value))
+    return {
+        stage: float(sum(values) / len(values))
+        for stage, values in series.items()
+        if values
+    }
+
+
 def evaluate_kpis(
     answers: list[FinalAnswer],
     labels: list[BenchmarkLabel] | None = None,
@@ -372,44 +402,25 @@ def evaluate_kpis(
         raise ValueError("labels length must match answers length")
 
     total = len(answers)
-    success = sum(1 for a in answers if _is_success(a))
-    grounded = sum(
-        1
-        for a in answers
-        if a.url.startswith(("http://", "https://")) and len(a.supporting_passages) > 0
+    grounded_pred = lambda a: (
+        a.url.startswith(("http://", "https://")) and len(a.supporting_passages) > 0
     )
-    graph = sum(
-        1
-        for a in answers
-        if float(a.confidence_breakdown.get("graph_corroboration", 0)) > 0
+    success = _count(_is_success, answers)
+    grounded = _count(grounded_pred, answers)
+    graph = _count(
+        lambda a: float(a.confidence_breakdown.get("graph_corroboration", 0)) > 0,
+        answers,
     )
-    type_match = sum(
-        1 for a in answers if float(a.confidence_breakdown.get("type_coercion", 0)) > 0
+    type_match = _count(
+        lambda a: float(a.confidence_breakdown.get("type_coercion", 0)) > 0,
+        answers,
     )
-    failures = sum(1 for a in answers if _is_failure(a))
+    failures = _count(_is_failure, answers)
 
     latency_p50, latency_p95 = _latency_percentiles(answers)
 
-    stage_series: dict[str, list[float]] = {}
-    for answer in answers:
-        if answer.diagnostics is None:
-            continue
-        for stage, value in answer.diagnostics.stage_latencies_s.items():
-            stage_series.setdefault(stage, []).append(float(value))
-    stage_mean = {
-        stage: (sum(values) / len(values))
-        for stage, values in stage_series.items()
-        if values
-    }
-
-    cache_hits = sum(
-        a.diagnostics.cache_hits for a in answers if a.diagnostics is not None
-    )
-    cache_misses = sum(
-        a.diagnostics.cache_misses for a in answers if a.diagnostics is not None
-    )
-    cache_total = cache_hits + cache_misses
-    cache_hit_rate = (cache_hits / cache_total) if cache_total else 0.0
+    stage_mean = _stage_latency_mean(answers)
+    cache_hit_rate = _cache_rates(answers)
 
     avg_fetched = _average_passage_metric(answers, "passages_fetched")
     avg_reranked = _average_passage_metric(answers, "passages_reranked")

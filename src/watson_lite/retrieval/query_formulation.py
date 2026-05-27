@@ -15,16 +15,93 @@ _BE_VERBS = frozenset({"is", "are", "was", "were", "be", "been", "am"})
 _DO_VERBS = frozenset({"do", "does", "did", "done", "doing"})
 _STOPWORDS = frozenset(
     {
-        "a", "an", "the", "in", "on", "at", "to", "for", "of", "with",
-        "by", "from", "as", "into", "through", "during", "before", "after",
-        "above", "below", "between", "out", "off", "over", "under", "again",
-        "further", "then", "once", "here", "there", "all", "each", "every",
-        "both", "few", "more", "most", "other", "some", "such", "no", "nor",
-        "not", "only", "own", "same", "so", "than", "too", "very", "just",
-        "about", "also", "and", "but", "or", "if", "because", "up", "down",
-        "it", "its", "this", "that", "these", "those", "he", "she", "they",
-        "we", "you", "me", "him", "her", "them", "my", "your", "his", "their",
-        "did", "does", "has", "have", "had", "been", "being",
+        "a",
+        "an",
+        "the",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "out",
+        "off",
+        "over",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "about",
+        "also",
+        "and",
+        "but",
+        "or",
+        "if",
+        "because",
+        "up",
+        "down",
+        "it",
+        "its",
+        "this",
+        "that",
+        "these",
+        "those",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+        "me",
+        "him",
+        "her",
+        "them",
+        "my",
+        "your",
+        "his",
+        "their",
+        "did",
+        "does",
+        "has",
+        "have",
+        "had",
+        "been",
+        "being",
     }
 )
 
@@ -42,14 +119,75 @@ def _content_words(text: str) -> set[str]:
     }
 
 
-def _entity_to_noun_chunk(
-    entity_text: str, noun_chunks: list[str]
-) -> str | None:
+def _entity_to_noun_chunk(entity_text: str, noun_chunks: list[str]) -> str | None:
     entity_lower = entity_text.lower()
     for chunk in noun_chunks:
         if entity_lower in chunk.lower():
             return chunk
     return None
+
+
+def _add_variant(q: str, variants: list[str], seen: set[str]) -> None:
+    qs = q.strip()
+    if qs and qs not in seen:
+        seen.add(qs)
+        variants.append(qs)
+
+
+def _add_sub_questions(
+    sub_questions: list[str],
+    raw: str,
+    variants: list[str],
+    seen: set[str],
+) -> None:
+    for sq in sub_questions:
+        if sq.lower() != raw.lower():
+            words = sq.split()
+            if len(words) > 2:
+                _add_variant(sq, variants, seen)
+
+
+def _add_type_suffix_queries(
+    question_type: str,
+    entity_texts: list[str],
+    variants: list[str],
+    seen: set[str],
+) -> None:
+    entity_str = " ".join(entity_texts)
+    if question_type == "when":
+        _add_variant(f"{entity_str} date", variants, seen)
+        _add_variant(f"{entity_str} year", variants, seen)
+    if question_type == "where":
+        _add_variant(f"{entity_str} location", variants, seen)
+    if question_type == "how":
+        _add_variant(f"{entity_str} how", variants, seen)
+    if question_type == "why":
+        _add_variant(f"{entity_str} reason", variants, seen)
+
+
+def _add_entity_enriched_query(
+    entity_texts: list[str],
+    noun_chunks: list[str],
+    variants: list[str],
+    seen: set[str],
+) -> None:
+    richer_entity_terms: list[str] = []
+    for e in entity_texts:
+        chunk = _entity_to_noun_chunk(e, noun_chunks)
+        richer_entity_terms.append(chunk if chunk else e)
+    _add_variant(" ".join(richer_entity_terms), variants, seen)
+
+
+def _add_entity_disambiguation_query(
+    raw: str,
+    entity_texts: list[str],
+    variants: list[str],
+    seen: set[str],
+) -> None:
+    raw_lower = raw.lower()
+    extra = [e for e in entity_texts if e.lower() not in raw_lower]
+    if extra:
+        _add_variant(f"{raw} {' '.join(extra)}", variants, seen)
 
 
 def _augmented_queries(
@@ -58,65 +196,31 @@ def _augmented_queries(
     variants: list[str] = []
     seen: set[str] = set()
 
-    def _add(q: str) -> None:
-        qs = q.strip()
-        if qs and qs not in seen:
-            seen.add(qs)
-            variants.append(qs)
-
-    _add(parsed.raw)
+    _add_variant(parsed.raw, variants, seen)
 
     entity_texts = [str(e["text"]) for e in parsed.entities]
-    # Keyword query: verb + entity names
     if parsed.root_verb and entity_texts:
-        _add(f"{parsed.root_verb} {' '.join(entity_texts)}")
+        _add_variant(f"{parsed.root_verb} {' '.join(entity_texts)}", variants, seen)
     elif parsed.keywords:
-        _add(" ".join(parsed.keywords))
+        _add_variant(" ".join(parsed.keywords), variants, seen)
 
-    # Entity-only queries — use full noun chunk when possible
     if entity_texts:
-        richer_entity_terms: list[str] = []
-        for e in entity_texts:
-            chunk = _entity_to_noun_chunk(e, parsed.noun_chunks)
-            richer_entity_terms.append(chunk if chunk else e)
-        _add(" ".join(richer_entity_terms))
+        _add_entity_enriched_query(entity_texts, parsed.noun_chunks, variants, seen)
     elif parsed.noun_chunks:
         chunks = list(parsed.noun_chunks)
         if chunks:
-            longest = max(chunks, key=lambda c: len(c))
-            _add(longest)
+            _add_variant(max(chunks, key=len), variants, seen)
 
-    # Raw + entity as a focused query
     if entity_texts:
-        raw_lower = parsed.raw.lower()
-        extra = [e for e in entity_texts if e.lower() not in raw_lower]
-        if extra:
-            _add(f"{parsed.raw} {' '.join(extra)}")
+        _add_entity_disambiguation_query(parsed.raw, entity_texts, variants, seen)
 
-    # LAT + entity query (when LAT is known)
     if parsed.lat and entity_texts:
-        _add(f"{parsed.lat} {' '.join(entity_texts)}")
+        _add_variant(f"{parsed.lat} {' '.join(entity_texts)}", variants, seen)
 
-    # Sub-question (if different from original and > 2 words)
-    for sq in parsed.sub_questions:
-        if sq.lower() != parsed.raw.lower():
-            words = sq.split()
-            if len(words) > 2:
-                _add(sq)
+    _add_sub_questions(parsed.sub_questions, parsed.raw, variants, seen)
 
-    # Type-specific fallback queries
-    if parsed.question_type == "when" and entity_texts:
-        _add(f"{' '.join(entity_texts)} date")
-        _add(f"{' '.join(entity_texts)} year")
-
-    if parsed.question_type == "where" and entity_texts:
-        _add(f"{' '.join(entity_texts)} location")
-
-    if parsed.question_type == "how" and entity_texts:
-        _add(f"{' '.join(entity_texts)} how")
-
-    if parsed.question_type == "why" and entity_texts:
-        _add(f"{' '.join(entity_texts)} reason")
+    if entity_texts:
+        _add_type_suffix_queries(parsed.question_type, entity_texts, variants, seen)
 
     return variants[:5]
 
@@ -125,44 +229,24 @@ def _original_queries(parsed: ParsedQuestion) -> list[str]:
     variants: list[str] = []
     seen: set[str] = set()
 
-    def _add(q: str) -> None:
-        qs = q.strip()
-        if qs and qs not in seen:
-            seen.add(qs)
-            variants.append(qs)
-
-    _add(parsed.raw)
+    _add_variant(parsed.raw, variants, seen)
 
     entity_texts = [str(e["text"]) for e in parsed.entities]
     if parsed.root_verb and entity_texts:
-        _add(f"{parsed.root_verb} {' '.join(entity_texts)}")
+        _add_variant(f"{parsed.root_verb} {' '.join(entity_texts)}", variants, seen)
     elif parsed.keywords:
-        _add(" ".join(parsed.keywords))
+        _add_variant(" ".join(parsed.keywords), variants, seen)
 
     if entity_texts:
-        _add(" ".join(entity_texts))
+        _add_variant(" ".join(entity_texts), variants, seen)
 
     if parsed.lat and entity_texts:
-        _add(f"{parsed.lat} {' '.join(entity_texts)}")
+        _add_variant(f"{parsed.lat} {' '.join(entity_texts)}", variants, seen)
 
-    for sq in parsed.sub_questions:
-        if sq.lower() != parsed.raw.lower():
-            words = sq.split()
-            if len(words) > 2:
-                _add(sq)
+    _add_sub_questions(parsed.sub_questions, parsed.raw, variants, seen)
 
-    if parsed.question_type == "when" and entity_texts:
-        _add(f"{' '.join(entity_texts)} date")
-        _add(f"{' '.join(entity_texts)} year")
-
-    if parsed.question_type == "where" and entity_texts:
-        _add(f"{' '.join(entity_texts)} location")
-
-    if parsed.question_type == "how" and entity_texts:
-        _add(f"{' '.join(entity_texts)} how")
-
-    if parsed.question_type == "why" and entity_texts:
-        _add(f"{' '.join(entity_texts)} reason")
+    if entity_texts:
+        _add_type_suffix_queries(parsed.question_type, entity_texts, variants, seen)
 
     return variants[:5]
 

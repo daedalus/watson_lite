@@ -619,7 +619,9 @@ class TestFetchDBpediaSparqlPassages:
 
         assert len(result) == 1
         assert result[0].source == "Python (programming language)"
-        assert result[0].url == "http://dbpedia.org/resource/Python_(programming_language)"
+        assert (
+            result[0].url == "http://dbpedia.org/resource/Python_(programming_language)"
+        )
         assert "interpreted" in result[0].text
 
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
@@ -651,8 +653,15 @@ class TestFetchDBpediaSparqlPassages:
             "results": {
                 "bindings": [
                     {
-                        "resource": {"type": "uri", "value": "http://dbpedia.org/resource/Python"},
-                        "label": {"type": "literal", "xml:lang": "en", "value": "Python"},
+                        "resource": {
+                            "type": "uri",
+                            "value": "http://dbpedia.org/resource/Python",
+                        },
+                        "label": {
+                            "type": "literal",
+                            "xml:lang": "en",
+                            "value": "Python",
+                        },
                         "abstract": {"type": "literal", "xml:lang": "en", "value": ""},
                     }
                 ]
@@ -678,11 +687,11 @@ class TestFetchDBpediaSparqlPassages:
         # The original double-quote must not appear inside the SPARQL string literal
         # (it would be injected between the enclosing '"...{safe_query}..."' delimiters)
         # After sanitization the input becomes 'python  language ' with spaces
-        assert 'python  language' in sparql_sent
+        assert "python  language" in sparql_sent
         # Verify that the raw quote from the input is not present unescaped
-        assert '\\"' not in sparql_sent or sparql_sent.count('"') == sparql_sent.replace(
-            '"python  language "', ""
-        ).count('"')
+        assert '\\"' not in sparql_sent or sparql_sent.count(
+            '"'
+        ) == sparql_sent.replace('"python  language "', "").count('"')
 
     def test_sparql_returns_cached_result(self) -> None:
         cached_passage = Passage(

@@ -13,6 +13,7 @@ authors = [
     {name = "Dario Clavijo", email = "clavijodario@gmail.com"}
 ]
 dependencies = [
+    "bitarray>=3.0.0",
     "bm25s>=0.1.0",
     "requests>=2.31.0",
 ]
@@ -103,6 +104,12 @@ mccabe = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short --cov=src --cov-fail-under=80"
+filterwarnings = [
+    "ignore:`torch\\.jit\\.script` is deprecated:DeprecationWarning",
+    "ignore:builtin type SwigPyPacked has no __module__:DeprecationWarning",
+    "ignore:builtin type SwigPyObject has no __module__:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src"]

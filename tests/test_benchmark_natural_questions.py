@@ -1,4 +1,5 @@
 """Tests for watson_lite.evaluation.benchmarks.natural_questions."""
+
 from __future__ import annotations
 
 import json
@@ -131,11 +132,14 @@ class TestDownloadNaturalQuestions:
     def test_train_split_without_download_dir(self, tmp_path: Path) -> None:
         output = tmp_path / "out.json"
 
-        with patch(
-            "watson_lite.evaluation.benchmarks.natural_questions.download_with_resume"
-        ) as mock_dl, patch(
-            "watson_lite.evaluation.benchmarks.natural_questions.tempfile.mkdtemp",
-            return_value=str(tmp_path / "tmpdir"),
+        with (
+            patch(
+                "watson_lite.evaluation.benchmarks.natural_questions.download_with_resume"
+            ) as mock_dl,
+            patch(
+                "watson_lite.evaluation.benchmarks.natural_questions.tempfile.mkdtemp",
+                return_value=str(tmp_path / "tmpdir"),
+            ),
         ):
             (tmp_path / "tmpdir").mkdir()
             raw_path = tmp_path / "tmpdir" / "nq_open_train.jsonl"

@@ -419,9 +419,7 @@ class TestWatsonLite:
     def test_scoring_toggles_off(self) -> None:
         self._setup_success_flow()
         self.pipeline = WatsonLite(
-            config=self.base_config.with_feature(
-                "question_type_bonus", False
-            )
+            config=self.base_config.with_feature("question_type_bonus", False)
             .with_feature("type_coercion", False)
             .with_feature("entailment", False)
         )

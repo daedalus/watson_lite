@@ -127,7 +127,9 @@ def score_entailment(question: str, candidate_span: str, passages: list[str]) ->
         try:
             _ENTAILMENT_SCORER = TextualEntailmentScorer()
         except ImportError:
-            logger.debug("Textual entailment disabled: sentence-transformers unavailable")
+            logger.debug(
+                "Textual entailment disabled: sentence-transformers unavailable"
+            )
             _ENTAILMENT_UNAVAILABLE = True
             return 0.0
     return _ENTAILMENT_SCORER.score(question, candidate_span, passages)

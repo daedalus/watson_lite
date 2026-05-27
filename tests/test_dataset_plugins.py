@@ -9,7 +9,9 @@ from watson_lite.retrieval.dataset_plugins import (
     DatasetRetrieverPlugin,
     build_dataset_plugin_registry,
 )
-from watson_lite.retrieval.offline_dataset_retriever import fetch_offline_dataset_passages
+from watson_lite.retrieval.offline_dataset_retriever import (
+    fetch_offline_dataset_passages,
+)
 
 
 class TestDatasetPlugins:
@@ -92,4 +94,3 @@ class TestDatasetPlugins:
         assert plugin is not None
         assert plugin.mode == "online"
         assert plugin.source == "entrypoint:custom"
-

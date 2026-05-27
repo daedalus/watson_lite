@@ -269,6 +269,14 @@ class NLPProcessor:
 
         return sub_questions if len(sub_questions) > 1 else [text]
 
+    @staticmethod
+    def _int_list(items: object) -> list[int] | None:
+        if isinstance(items, (list, tuple)) and items:
+            ints = [i for i in items if isinstance(i, int)]
+            if ints:
+                return ints
+        return None
+
     def _mention_text(self, doc: Doc, mention: object) -> str:  # pragma: no cover
         """Extract the text of a coreference mention span.
 
@@ -280,19 +288,15 @@ class NLPProcessor:
 
         start = getattr(mention, "start", None)
         end = getattr(mention, "end", None)
-        if isinstance(start, int) and isinstance(end, int) and start < end:
-            return str(doc[start:end])
+        if isinstance(start, int) and isinstance(end, int):
+            if start < end:
+                return str(doc[start:end])
 
-        token_indexes = getattr(mention, "token_indexes", None)
-        if isinstance(token_indexes, (list, tuple)) and token_indexes:
-            int_indexes = [index for index in token_indexes if isinstance(index, int)]
-            if int_indexes:
-                return str(doc[min(int_indexes) : max(int_indexes) + 1])
-
-        if isinstance(mention, (list, tuple)) and mention:
-            int_indexes = [index for index in mention if isinstance(index, int)]
-            if int_indexes:
-                return str(doc[min(int_indexes) : max(int_indexes) + 1])
+        int_indexes = self._int_list(getattr(mention, "token_indexes", None))
+        if not int_indexes:
+            int_indexes = self._int_list(mention)
+        if int_indexes:
+            return str(doc[min(int_indexes) : max(int_indexes) + 1])
 
         token_index = getattr(mention, "token_index", None)
         if isinstance(token_index, int):

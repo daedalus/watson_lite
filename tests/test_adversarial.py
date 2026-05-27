@@ -41,6 +41,18 @@ class TestCacheAdversarial:
         self.cache.close()
         os.unlink(self.tmp)
 
+    def _inject_and_reopen(self, key: str, raw_value: str) -> None:
+        """Inject raw data into SQLite bypassing Cache, then reopen so bloom picks it up."""
+        self.cache.close()
+        con = sqlite3.connect(self.tmp)
+        con.execute(
+            "INSERT OR REPLACE INTO cache (key, value, created_at) VALUES (?, ?, ?)",
+            (key, raw_value, 0.0),
+        )
+        con.commit()
+        con.close()
+        self.cache = Cache(self.tmp)
+
     def test_unwrap_legacy_bare_string(self) -> None:
         self.cache.set("k", "raw_string")
         row = self.cache.con.execute(
@@ -57,28 +69,16 @@ class TestCacheAdversarial:
         assert self.cache.get("k") == "legacy"
 
     def test_unwrap_legacy_bare_int(self) -> None:
-        self.cache.con.execute(
-            "INSERT OR REPLACE INTO cache (key, value, created_at) VALUES (?, ?, ?)",
-            ("int_key", json.dumps(42), 0.0),
-        )
-        self.cache.con.commit()
+        self._inject_and_reopen("int_key", json.dumps(42))
         assert self.cache.get("int_key") == 42
         assert self.cache.get_or_sentinel("int_key") == 42
 
     def test_unwrap_legacy_bare_list(self) -> None:
-        self.cache.con.execute(
-            "INSERT OR REPLACE INTO cache (key, value, created_at) VALUES (?, ?, ?)",
-            ("list_key", json.dumps(["a", "b"]), 0.0),
-        )
-        self.cache.con.commit()
+        self._inject_and_reopen("list_key", json.dumps(["a", "b"]))
         assert self.cache.get("list_key") == ["a", "b"]
 
     def test_unwrap_legacy_bare_null(self) -> None:
-        self.cache.con.execute(
-            "INSERT OR REPLACE INTO cache (key, value, created_at) VALUES (?, ?, ?)",
-            ("null_key", json.dumps(None), 0.0),
-        )
-        self.cache.con.commit()
+        self._inject_and_reopen("null_key", json.dumps(None))
         assert self.cache.get("null_key") is None
         assert self.cache.get_or_sentinel("null_key") is None
 
@@ -89,11 +89,7 @@ class TestCacheAdversarial:
         assert isinstance(val, str)
 
     def test_corrupted_json_raises(self) -> None:
-        self.cache.con.execute(
-            "INSERT OR REPLACE INTO cache (key, value, created_at) VALUES (?, ?, ?)",
-            ("bad", "not valid json[[[", 0.0),
-        )
-        self.cache.con.commit()
+        self._inject_and_reopen("bad", "not valid json[[[")
         with pytest.raises(json.JSONDecodeError):
             self.cache.get("bad")
 

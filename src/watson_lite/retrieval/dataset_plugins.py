@@ -67,7 +67,9 @@ class DatasetPluginRegistry:
     def get(self, name: str) -> DatasetRetrieverPlugin | None:
         return self._plugins.get(name)
 
-    def list(self, mode: PluginMode | None = None) -> tuple[DatasetRetrieverPlugin, ...]:
+    def list(
+        self, mode: PluginMode | None = None
+    ) -> tuple[DatasetRetrieverPlugin, ...]:
         plugins = tuple(self._plugins.values())
         if mode is None:
             return tuple(sorted(plugins, key=lambda plugin: plugin.name))
@@ -88,7 +90,9 @@ class DatasetPluginRegistry:
         return tuple(name for name in plugin_names if name not in self._plugins)
 
 
-def _builtin_online_plugins(config: FeatureConfig) -> tuple[DatasetRetrieverPlugin, ...]:
+def _builtin_online_plugins(
+    config: FeatureConfig,
+) -> tuple[DatasetRetrieverPlugin, ...]:
     return (
         DatasetRetrieverPlugin(
             "wikipedia",
@@ -189,7 +193,9 @@ def _builtin_online_plugins(config: FeatureConfig) -> tuple[DatasetRetrieverPlug
     )
 
 
-def _builtin_offline_plugins(config: FeatureConfig) -> tuple[DatasetRetrieverPlugin, ...]:
+def _builtin_offline_plugins(
+    config: FeatureConfig,
+) -> tuple[DatasetRetrieverPlugin, ...]:
     plugins: list[DatasetRetrieverPlugin] = []
     for online_plugin in _builtin_online_plugins(config):
         dataset_name = online_plugin.name
@@ -223,7 +229,9 @@ def _coerce_external_plugins(
         for item in loaded:
             if not isinstance(item, DatasetRetrieverPlugin):
                 continue
-            normalized.append(DatasetRetrieverPlugin(**{**item.__dict__, "source": source}))
+            normalized.append(
+                DatasetRetrieverPlugin(**{**item.__dict__, "source": source})
+            )
         return tuple(normalized)
     return ()
 

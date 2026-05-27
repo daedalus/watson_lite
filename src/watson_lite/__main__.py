@@ -196,7 +196,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Minimum confidence required to return an answer; "
-            "below this the system returns \"I don't know\" (default: disabled)"
+            'below this the system returns "I don\'t know" (default: disabled)'
         ),
     )
     _add_benchmark_args(parser)

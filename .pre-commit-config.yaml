@@ -18,6 +18,7 @@ repos:
         name: Lizard - Code Complexity
         entry: lizard src/ --warnings_only
         language: system
+        pass_filenames: false
         files: \.py$
       - id: impactguard-check
         name: ImpactGuard - Full Pipeline Check

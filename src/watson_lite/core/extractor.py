@@ -432,7 +432,6 @@ class ConfidenceScorer:
         enable_answer_merging: bool = True,
         bidirectional_signal: float = 0.0,
     ) -> FinalAnswer:
-
         if not candidates:
             return FinalAnswer(
                 answer="No answer found",
@@ -465,7 +464,10 @@ class ConfidenceScorer:
         confidence = self._compute_final_confidence(
             lat_qids, enable_type_coercion, signals
         )
-        if self.confidence_threshold is not None and confidence < self.confidence_threshold:
+        if (
+            self.confidence_threshold is not None
+            and confidence < self.confidence_threshold
+        ):
             logger.debug(
                 "Confidence %.3f below threshold %.3f — abstaining",
                 confidence,
@@ -476,6 +478,9 @@ class ConfidenceScorer:
                 confidence=confidence,
                 source="",
                 url="",
-                confidence_breakdown={"reason": "below_threshold", "threshold": self.confidence_threshold},
+                confidence_breakdown={
+                    "reason": "below_threshold",
+                    "threshold": self.confidence_threshold,
+                },
             )
         return self._build_score_answer(best, candidates, signals, confidence)

@@ -400,7 +400,6 @@ class TestConfidenceScorer:
         # The stored confidence value should equal the raw computed confidence
         assert result_gated.confidence == pytest.approx(result_raw.confidence)
 
-
         candidates = [
             AnswerCandidate(
                 span="Paris",

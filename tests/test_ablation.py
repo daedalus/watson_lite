@@ -575,9 +575,7 @@ class TestRegressionDetection:
         issues = _check_regressions(
             baseline,
             current,
-            RegressionThresholds(
-                max_calibration_kl_increase=0.0, metric_tolerance=0.0
-            ),
+            RegressionThresholds(max_calibration_kl_increase=0.0, metric_tolerance=0.0),
         )
         assert any(
             i["metric"] == "confidence_calibration_kl_divergence" for i in issues
@@ -645,13 +643,9 @@ class TestRegressionDetection:
         issues = _check_regressions(
             baseline,
             current,
-            RegressionThresholds(
-                max_f1_distribution_kl=0.0, metric_tolerance=0.0
-            ),
+            RegressionThresholds(max_f1_distribution_kl=0.0, metric_tolerance=0.0),
         )
-        assert any(
-            i["metric"] == "f1_distribution_kl_divergence" for i in issues
-        )
+        assert any(i["metric"] == "f1_distribution_kl_divergence" for i in issues)
 
     def test_no_distribution_regression_when_threshold_none(self) -> None:
         baseline = BenchmarkProfileResult(
@@ -675,9 +669,7 @@ class TestRegressionDetection:
             current,
             RegressionThresholds(max_f1_distribution_kl=None),
         )
-        assert not any(
-            i["metric"] == "f1_distribution_kl_divergence" for i in issues
-        )
+        assert not any(i["metric"] == "f1_distribution_kl_divergence" for i in issues)
 
     def test_identical_distributions_have_no_divergence_regression(self) -> None:
         metrics = [
@@ -700,13 +692,12 @@ class TestRegressionDetection:
             baseline,
             current,
             RegressionThresholds(
-                max_f1_distribution_kl=0.0, max_f1_distribution_jsd=0.0,
+                max_f1_distribution_kl=0.0,
+                max_f1_distribution_jsd=0.0,
                 metric_tolerance=0.001,
             ),
         )
-        assert not any(
-            "distribution" in i["metric"] for i in issues
-        )
+        assert not any("distribution" in i["metric"] for i in issues)
 
     # regression_check injects baseline -------------------------------------
 

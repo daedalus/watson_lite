@@ -1,4 +1,5 @@
 """Tests for watson_lite.evaluation.benchmarks._download_utils."""
+
 from __future__ import annotations
 
 import io
@@ -33,7 +34,9 @@ class TestTermWidth:
 
 
 class TestProgressBar:
-    def test_zero_total_returns_immediately(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_zero_total_returns_immediately(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         progress_bar("test", 0, 0)
         assert capsys.readouterr().out == ""
 
@@ -43,7 +46,9 @@ class TestProgressBar:
         assert "Downloading" in out
         assert "50.0%" in out
 
-    def test_complete_progress_adds_newline(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_complete_progress_adds_newline(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         progress_bar("Downloading", 100, 100)
         out = capsys.readouterr().out
         assert out.endswith("\n")
@@ -54,7 +59,9 @@ class TestProgressBar:
         out = capsys.readouterr().out
         assert "100.0%" in out
 
-    def test_negative_total_returns_immediately(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_negative_total_returns_immediately(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         progress_bar("test", 5, -1)
         assert capsys.readouterr().out == ""
 
@@ -112,7 +119,9 @@ class TestDownloadWithResume:
         resp.raw = MagicMock()
         resp.raw.headers = {}
         chunk_size = 4096
-        chunks = [content[i : i + chunk_size] for i in range(0, len(content), chunk_size)] or [b""]
+        chunks = [
+            content[i : i + chunk_size] for i in range(0, len(content), chunk_size)
+        ] or [b""]
         resp.iter_content.return_value = iter(chunks)
         resp.raise_for_status = MagicMock()
         return resp

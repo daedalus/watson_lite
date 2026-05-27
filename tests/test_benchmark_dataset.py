@@ -63,7 +63,9 @@ def test_checked_in_benchmark_dataset_runs_regression_smoke(
 
     with (
         patch("watson_lite.evaluation.benchmark_runner.WatsonLite", FakeWatson),
-        patch("watson_lite.evaluation.benchmark_runner._get_answer_cache") as mock_cache,
+        patch(
+            "watson_lite.evaluation.benchmark_runner._get_answer_cache"
+        ) as mock_cache,
     ):
         mock_cache.return_value = Cache(db_path=str(tmp_path / "cache_bd.sqlite3"))
         results, regressions = run_benchmark_profiles(
@@ -81,7 +83,15 @@ def test_checked_in_benchmark_dataset_runs_regression_smoke(
     assert "answers" in first
     assert len(first["answers"]) == 3
     assert all(
-        {"question", "generated_answer", "reference_answers", "exact_match", "f1",
-         "confidence", "latency_s"} <= set(a.keys())
+        {
+            "question",
+            "generated_answer",
+            "reference_answers",
+            "exact_match",
+            "f1",
+            "confidence",
+            "latency_s",
+        }
+        <= set(a.keys())
         for a in first["answers"]
     )

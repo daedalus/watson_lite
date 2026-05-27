@@ -1,4 +1,5 @@
 """Tests for watson_lite.evaluation.benchmarks.squad."""
+
 from __future__ import annotations
 
 import json
@@ -160,9 +161,7 @@ class TestDownloadSquad:
                 or path.write_text(json.dumps(_RAW_SQUAD), encoding="utf-8")
                 or path
             )
-            samples = download_squad(
-                str(output_path), download_dir=str(dl_dir)
-            )
+            samples = download_squad(str(output_path), download_dir=str(dl_dir))
 
         assert isinstance(samples, list)
         assert len(samples) > 0
@@ -171,11 +170,14 @@ class TestDownloadSquad:
     def test_uses_temp_dir_when_no_download_dir(self, tmp_path: Path) -> None:
         output_path = tmp_path / "squad_out.json"
 
-        with patch(
-            "watson_lite.evaluation.benchmarks.squad.download_with_resume"
-        ) as mock_dl, patch(
-            "watson_lite.evaluation.benchmarks.squad.tempfile.mkdtemp",
-            return_value=str(tmp_path / "tmpdir"),
+        with (
+            patch(
+                "watson_lite.evaluation.benchmarks.squad.download_with_resume"
+            ) as mock_dl,
+            patch(
+                "watson_lite.evaluation.benchmarks.squad.tempfile.mkdtemp",
+                return_value=str(tmp_path / "tmpdir"),
+            ),
         ):
             (tmp_path / "tmpdir").mkdir()
             raw_path = tmp_path / "tmpdir" / "squad_v2_dev.json"
@@ -194,7 +196,9 @@ class TestSquadMain:
             patch("sys.argv", ["prog", "--output", str(output)]),
             patch(
                 "watson_lite.evaluation.benchmarks.squad.download_squad",
-                return_value=[{"question": "Q?", "answers": ["A"], "evidence_passages": []}],
+                return_value=[
+                    {"question": "Q?", "answers": ["A"], "evidence_passages": []}
+                ],
             ) as mock_ds,
         ):
             main()

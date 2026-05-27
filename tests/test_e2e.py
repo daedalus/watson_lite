@@ -58,7 +58,9 @@ def patched_pipeline():
     - The QA transformers pipeline returns a fixed span.
     """
     with (
-        patch("watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages") as mock_fetch,
+        patch(
+            "watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages"
+        ) as mock_fetch,
         patch("watson_lite.core.nlp.spacy") as mock_spacy,
         patch("watson_lite.retrieval.vector_retriever.SentenceTransformer") as mock_st,
         patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,
@@ -238,9 +240,7 @@ class TestE2EPipeline:
         """
         watson, _, mock_qa = patched_pipeline
         mock_qa.return_value = {"answer": "Gustave Eiffel", "score": 0.85}
-        with patch(
-            "watson_lite.core.extractor.score_type_coercion", return_value=0.1
-        ):
+        with patch("watson_lite.core.extractor.score_type_coercion", return_value=0.1):
             result = watson.answer("Who designed the Eiffel Tower?", verbose=False)
         assert result.confidence_breakdown.get("question_type_bonus", 0) == 0.1
 

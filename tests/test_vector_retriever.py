@@ -164,7 +164,10 @@ class TestVectorRetriever:
         self.faiss_patcher.stop()
 
         with (
-            patch("watson_lite.retrieval.vector_retriever.SentenceTransformer", MagicMock()),
+            patch(
+                "watson_lite.retrieval.vector_retriever.SentenceTransformer",
+                MagicMock(),
+            ),
             patch("watson_lite.retrieval.vector_retriever.faiss", None),
         ):
             with pytest.raises(ImportError, match="faiss-cpu"):

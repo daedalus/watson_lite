@@ -1,6 +1,8 @@
 import atexit
+import hashlib
 import json
 import logging
+import math
 import os
 import pathlib
 import sqlite3
@@ -8,6 +10,8 @@ import time
 from copy import deepcopy
 from threading import Lock
 from typing import Any, TypedDict
+
+import bitarray
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +24,69 @@ _MAINTENANCE_INTERVAL_WRITES = 25
 # Sentinel used to distinguish a cached ``None`` value from a cache miss.
 SENTINEL = object()
 _SENTINEL = SENTINEL  # Backward-compat alias for internal imports.
+
+_BLOOM_ERROR_RATE = 0.01
+
+
+class BloomFilter:
+    """Bloom filter backed by a :mod:`bitarray` bitmap.
+
+    Uses a single SHA-256 hash with bit-variable slicing to produce *k*
+    independent index positions from the 256-bit digest.  The filter size *m*
+    is rounded up to a power of two so that fast bitwise masking (``& (m-1)``)
+    can replace modulo.
+    """
+
+    def __init__(self, capacity: int, error_rate: float = _BLOOM_ERROR_RATE) -> None:
+        n = max(capacity, 1)
+        m_ideal = -n * math.log(error_rate) / (math.log(2) ** 2)
+        self.m = 1 << max(1, int(m_ideal).bit_length())
+        self._mask = self.m - 1
+        self._bits_per_slice = self.m.bit_length() - 1
+        self._k = max(1, 256 // self._bits_per_slice)
+
+        self._bits = bitarray.bitarray(self.m, endian="little")
+        self._bits.setall(False)
+
+    @staticmethod
+    def _digest(key: str) -> int:
+        return int.from_bytes(hashlib.sha256(key.encode("utf-8")).digest(), "big")
+
+    def _check(self, value: int) -> bool:
+        v = value
+        for _ in range(self._k):
+            if not self._bits[v & self._mask]:
+                return False
+            v >>= self._bits_per_slice
+        return True
+
+    def _set(self, value: int) -> None:
+        v = value
+        for _ in range(self._k):
+            self._bits[v & self._mask] = True
+            v >>= self._bits_per_slice
+
+    def add(self, key: str) -> None:
+        self._set(self._digest(key))
+
+    def query(self, key: str) -> bool:
+        return self._check(self._digest(key))
+
+    def update(self, key: str) -> bool:
+        """Check membership then add.  Returns ``True`` if the key was already present."""
+        value = self._digest(key)
+        if self._check(value):
+            return True
+        self._set(value)
+        return False
+
+    @property
+    def load_factor(self) -> float:
+        """Fraction of bits set to 1.  Used to decide when to resize."""
+        return self._bits.count() / self.m
+
+    def clear(self) -> None:
+        self._bits.setall(False)
 
 
 class CacheMetrics(TypedDict):
@@ -114,7 +181,25 @@ class Cache:
         self._ensure_expires_column()
         self._entry_count = self._count_entries()
         self._writes_since_maintenance = 0
+        self._bloom_check_counter = 0
         self._delete_expired()
+        self._init_bloom()
+
+    def _init_bloom(self) -> None:
+        capacity = max(1, self._entry_count) * 10
+        self._bloom = BloomFilter(capacity)
+        rows = self.con.execute("SELECT key FROM cache").fetchall()
+        for (key,) in rows:
+            self._bloom.add(key)
+
+    def _maybe_grow_bloom(self) -> None:
+        self._bloom_check_counter += 1
+        interval = max(1, int(self._entry_count * 0.05))
+        if self._bloom_check_counter < interval:
+            return
+        self._bloom_check_counter = 0
+        if self._bloom.load_factor > 0.8:
+            self._init_bloom()
 
     def _count_entries(self) -> int:
         row = self.con.execute("SELECT COUNT(*) FROM cache").fetchone()
@@ -195,6 +280,8 @@ class Cache:
            introduced) are handled transparently via :meth:`_unwrap`.
         """
         canonical_key = self.canonicalize_key(key)
+        if not self._bloom.query(canonical_key):
+            return None
         row = self.con.execute(
             "SELECT value, expires_at FROM cache WHERE key = ?", (canonical_key,)
         ).fetchone()
@@ -213,6 +300,9 @@ class Cache:
         from an absent key.
         """
         canonical_key = self.canonicalize_key(key)
+        if not self._bloom.query(canonical_key):
+            _record_cache_miss(canonical_key)
+            return SENTINEL
         row = self.con.execute(
             "SELECT value, expires_at FROM cache WHERE key = ?", (canonical_key,)
         ).fetchone()
@@ -229,6 +319,7 @@ class Cache:
 
     def set(self, key: str, value: Any, *, ttl_seconds: int | None = None) -> None:  # noqa: ANN401
         canonical_key = self.canonicalize_key(key)
+        self._bloom.add(canonical_key)
         if ttl_seconds is not None and ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be positive (greater than zero)")
         expires_at = time.time() + ttl_seconds if ttl_seconds is not None else None
@@ -259,12 +350,15 @@ class Cache:
             self._delete_expired()
             self._prune_if_needed()
             self._writes_since_maintenance = 0
+        self._maybe_grow_bloom()
 
     def clear(self) -> None:
         self.con.execute("DELETE FROM cache")
         self.con.commit()
         self._entry_count = 0
         self._writes_since_maintenance = 0
+        self._bloom_check_counter = 0
+        self._init_bloom()
 
     def close(self) -> None:
         self.con.close()

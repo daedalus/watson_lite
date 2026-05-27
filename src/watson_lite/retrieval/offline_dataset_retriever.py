@@ -38,7 +38,9 @@ def _resolve_dataset_path(dataset_name: str, base_dir: str | None) -> Path | Non
     if explicit_path:
         return Path(explicit_path)
 
-    resolved_base = (base_dir or "").strip() or os.getenv(_OFFLINE_DATASET_DIR_ENV, "").strip()
+    resolved_base = (base_dir or "").strip() or os.getenv(
+        _OFFLINE_DATASET_DIR_ENV, ""
+    ).strip()
     if not resolved_base:
         return None
     return Path(resolved_base) / f"{dataset_name}.jsonl"
@@ -98,7 +100,9 @@ def _load_offline_corpus(path: Path, dataset_name: str) -> list[Passage]:
         return cached
 
     if not path.exists():
-        logger.warning("Offline dataset path does not exist for '%s': %s", dataset_name, path)
+        logger.warning(
+            "Offline dataset path does not exist for '%s': %s", dataset_name, path
+        )
         _OFFLINE_CORPUS_CACHE[cache_key] = []
         return []
 

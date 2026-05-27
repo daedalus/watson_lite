@@ -742,7 +742,13 @@ class TestMain:
         with patch.object(
             sys,
             "argv",
-            ["prog", "plugins", "validate", "--datasets", "wikipedia,wikipedia_offline"],
+            [
+                "prog",
+                "plugins",
+                "validate",
+                "--datasets",
+                "wikipedia,wikipedia_offline",
+            ],
         ):
             result = main()
         assert result == 0

@@ -198,6 +198,33 @@ def _request_json(
     return None
 
 
+def _safe_request_json(
+    url: str,
+    params: dict[str, Any],
+    *,
+    source: str,
+    headers: dict[str, Any] | None = None,
+) -> Any | None:  # noqa: ANN401
+    try:
+        resp = requests.get(
+            url,
+            params=params,
+            headers=headers or WIKI_HEADERS,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("%s request failed: %s", source, exc)
+        return None
+    if resp.status_code >= 400:
+        logger.warning("%s request failed: HTTP %s", source, int(resp.status_code))
+        return None
+    try:
+        return resp.json()
+    except Exception as exc:
+        logger.warning("%s response parse failed: %s", source, exc)
+        return None
+
+
 def _chunk_text(text: str) -> list[str]:
     sentences = [
         sentence.strip()
@@ -831,34 +858,7 @@ def fetch_pubmed_passages(
         record = result_payload.get(_stringify(uid), {})
         if not isinstance(record, dict):
             continue
-        title = _stringify(record.get("title"))
-        source_journal = _stringify(
-            record.get("fulljournalname") or record.get("source") or "PubMed"
-        )
-        pubdate = _stringify(record.get("pubdate"))
-        authors = record.get("authors")
-        author_names: list[str] = []
-        if isinstance(authors, list):
-            for author in authors[:5]:
-                if isinstance(author, dict):
-                    name = _stringify(author.get("name"))
-                    if name:
-                        author_names.append(name)
-        text = " ".join(
-            part
-            for part in [
-                title,
-                f"Journal: {source_journal}" if source_journal else "",
-                f"Published: {pubdate}" if pubdate else "",
-                ("Authors: " + ", ".join(author_names) if author_names else ""),
-            ]
-            if part
-        )
-        url = f"https://pubmed.ncbi.nlm.nih.gov/{_stringify(uid)}/"
-        source = title or source_journal or "PubMed"
-        _append_deduped_passage(
-            passages, seen_chunks, text=text, source=source, url=url
-        )
+        _format_pubmed_passage(record, uid, passages, seen_chunks)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
@@ -930,6 +930,223 @@ def fetch_arxiv_passages(
     return passages
 
 
+def _format_openlibrary_passage(
+    doc: dict[str, Any],
+    passages: list[Passage],
+    seen_chunks: set[str],
+) -> None:
+    title = _stringify(doc.get("title"))
+    key = _stringify(doc.get("key"))
+    authors = doc.get("author_name")
+    author_text = ""
+    if isinstance(authors, list):
+        author_text = ", ".join(map(_stringify, filter(None, authors[:5])))
+    first_sentence = doc.get("first_sentence")
+    sentence_text = ""
+    if isinstance(first_sentence, list) and first_sentence:
+        sentence_text = _stringify(first_sentence[0])
+    elif isinstance(first_sentence, str):
+        sentence_text = _stringify(first_sentence)
+    subjects = doc.get("subject")
+    subject_text = ""
+    if isinstance(subjects, list):
+        subject_text = ", ".join(map(_stringify, filter(None, subjects[:8])))
+    year = _stringify(doc.get("first_publish_year"))
+    editions = _stringify(doc.get("edition_count"))
+    parts = [title]
+    if author_text:
+        parts.append(f"Authors: {author_text}")
+    if sentence_text:
+        parts.append(f"First sentence: {sentence_text}")
+    if subject_text:
+        parts.append(f"Subjects: {subject_text}")
+    if year:
+        parts.append(f"First published: {year}")
+    if editions:
+        parts.append(f"Editions: {editions}")
+    url = f"https://openlibrary.org{key}" if key else "https://openlibrary.org"
+
+    _append_deduped_passage(
+        passages,
+        seen_chunks,
+        text=" ".join(parts),
+        source=title or "OpenLibrary",
+        url=url,
+    )
+
+
+def _format_stackexchange_passage(
+    item: dict[str, Any],
+    passages: list[Passage],
+    seen_chunks: set[str],
+    site: str,
+) -> None:
+    title = _stringify(item.get("title"))
+    body_html = _stringify(item.get("body") or item.get("excerpt"))
+    body = _strip_html(body_html)
+    tags = item.get("tags")
+    tag_text = ""
+    if isinstance(tags, list):
+        tag_text = ", ".join(_stringify(tag) for tag in tags[:8] if tag)
+    text = " ".join(
+        part for part in [title, body, f"Tags: {tag_text}" if tag_text else ""] if part
+    )
+    _append_deduped_passage(
+        passages,
+        seen_chunks,
+        text=text,
+        source=f"StackExchange:{site}",
+        url=_stringify(item.get("link")),
+    )
+
+
+def _format_dbpedia_passage(
+    doc: dict[str, Any],
+    passages: list[Passage],
+    seen_chunks: set[str],
+) -> None:
+    label = doc.get("label")
+    if isinstance(label, list):
+        source = _stringify(label[0] if label else "")
+    else:
+        source = _stringify(label)
+    comment = doc.get("comment")
+    if isinstance(comment, list):
+        comment_text = _stringify(comment[0] if comment else "")
+    else:
+        comment_text = _stringify(comment)
+    classes = doc.get("typeName")
+    class_text = ""
+    if isinstance(classes, list):
+        class_text = ", ".join(_stringify(class_name) for class_name in classes[:8])
+    url_values = doc.get("resource")
+    if isinstance(url_values, list) and url_values:
+        url = _stringify(url_values[0])
+    else:
+        url = _stringify(url_values)
+    text = " ".join(
+        part
+        for part in [
+            source,
+            comment_text,
+            f"Classes: {class_text}" if class_text else "",
+        ]
+        if part
+    )
+    _append_deduped_passage(
+        passages,
+        seen_chunks,
+        text=text,
+        source=source or "DBpedia",
+        url=url or "https://dbpedia.org",
+    )
+
+
+def _format_dbpedia_sparql_passage(
+    binding: dict[str, Any],
+    passages: list[Passage],
+    seen_chunks: set[str],
+) -> None:
+    label_node = binding.get("label", {})
+    abstract_node = binding.get("abstract", {})
+    resource_node = binding.get("resource", {})
+    label = _stringify(
+        label_node.get("value") if isinstance(label_node, dict) else label_node
+    )
+    abstract = _stringify(
+        abstract_node.get("value") if isinstance(abstract_node, dict) else abstract_node
+    )
+    url = _stringify(
+        resource_node.get("value") if isinstance(resource_node, dict) else resource_node
+    )
+    if not abstract:
+        return
+    _append_deduped_passage(
+        passages,
+        seen_chunks,
+        text=abstract,
+        source=label or "DBpedia",
+        url=url or "https://dbpedia.org",
+    )
+
+
+def _format_oeis_passage(
+    item: dict[str, Any],
+    passages: list[Passage],
+    seen_chunks: set[str],
+) -> None:
+    number = item.get("number")
+    number_str = _stringify(number)
+    try:
+        number_int = int(number_str)
+        sequence_id = f"A{number_int:06d}"
+    except Exception:
+        sequence_id = number_str or "OEIS"
+    name = _stringify(item.get("name"))
+    data = _stringify(item.get("data"))
+    comment = _stringify(item.get("comment"))
+    formula = _stringify(item.get("formula"))
+    example = _stringify(item.get("example"))
+    text = " ".join(
+        part
+        for part in [
+            name,
+            f"Data: {data}" if data else "",
+            f"Comment: {comment}" if comment else "",
+            f"Formula: {formula}" if formula else "",
+            f"Example: {example}" if example else "",
+        ]
+        if part
+    )
+    url = (
+        f"https://oeis.org/{sequence_id}"
+        if sequence_id.startswith("A")
+        else "https://oeis.org"
+    )
+    _append_deduped_passage(
+        passages, seen_chunks, text=text, source=sequence_id, url=url
+    )
+
+
+def _format_pubmed_passage(
+    record: dict[str, Any],
+    uid: str,
+    passages: list[Passage],
+    seen_chunks: set[str],
+) -> None:
+    title = _stringify(record.get("title"))
+    source_journal = _stringify(
+        record.get("fulljournalname") or record.get("source") or "PubMed"
+    )
+    pubdate = _stringify(record.get("pubdate"))
+    authors = record.get("authors")
+    author_names: list[str] = []
+    if isinstance(authors, list):
+        for author in authors[:5]:
+            if isinstance(author, dict):
+                name = _stringify(author.get("name"))
+                if name:
+                    author_names.append(name)
+    text = " ".join(
+        part
+        for part in [
+            title,
+            f"Journal: {source_journal}" if source_journal else "",
+            f"Published: {pubdate}" if pubdate else "",
+            ("Authors: " + ", ".join(author_names) if author_names else ""),
+        ]
+        if part
+    )
+    url = f"https://pubmed.ncbi.nlm.nih.gov/{_stringify(uid)}/"
+    _append_deduped_passage(
+        passages,
+        seen_chunks,
+        text=text,
+        source=title or source_journal or "PubMed",
+        url=url,
+    )
+
+
 def fetch_openlibrary_passages(
     query: str, *, top_k: int = WIKI_SEARCH_LIMIT
 ) -> list[Passage]:
@@ -942,34 +1159,16 @@ def fetch_openlibrary_passages(
         logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
-    try:
-        response = requests.get(
-            OPENLIBRARY_SEARCH_API,
-            params={
-                "q": query,
-                "limit": top_k,
-                "fields": (
-                    "key,title,author_name,first_sentence,"
-                    "subject,first_publish_year,edition_count"
-                ),
-            },
-            headers=WIKI_HEADERS,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as err:  # pragma: no cover - defensive network isolation
-        logger.warning("OpenLibrary request failed: %s", err)
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    if response.status_code >= 400:
-        logger.warning("OpenLibrary request failed: HTTP %s", int(response.status_code))
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    try:
-        payload = response.json()
-    except Exception as err:  # pragma: no cover - defensive parsing guard
-        logger.warning("OpenLibrary response parse failed: %s", err)
+    payload = _safe_request_json(
+        OPENLIBRARY_SEARCH_API,
+        {
+            "q": query,
+            "limit": top_k,
+            "fields": "key,title,author_name,first_sentence,subject,first_publish_year,edition_count",
+        },
+        source="OpenLibrary",
+    )
+    if payload is None:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
@@ -983,46 +1182,7 @@ def fetch_openlibrary_passages(
     for doc in docs:
         if not isinstance(doc, dict):
             continue
-        title = _stringify(doc.get("title"))
-        key = _stringify(doc.get("key"))
-        authors = doc.get("author_name")
-        author_text = ""
-        if isinstance(authors, list):
-            author_text = ", ".join(
-                _stringify(author) for author in authors[:5] if author
-            )
-        first_sentence = doc.get("first_sentence")
-        sentence_text = ""
-        if isinstance(first_sentence, list) and first_sentence:
-            sentence_text = _stringify(first_sentence[0])
-        elif isinstance(first_sentence, str):
-            sentence_text = _stringify(first_sentence)
-        subjects = doc.get("subject")
-        subject_text = ""
-        if isinstance(subjects, list):
-            subject_text = ", ".join(
-                _stringify(subject) for subject in subjects[:8] if subject
-            )
-        year = _stringify(doc.get("first_publish_year"))
-        editions = _stringify(doc.get("edition_count"))
-
-        text = " ".join(
-            part
-            for part in [
-                title,
-                f"Authors: {author_text}" if author_text else "",
-                f"First sentence: {sentence_text}" if sentence_text else "",
-                f"Subjects: {subject_text}" if subject_text else "",
-                f"First published: {year}" if year else "",
-                f"Editions: {editions}" if editions else "",
-            ]
-            if part
-        )
-        source = title or "OpenLibrary"
-        url = f"https://openlibrary.org{key}" if key else "https://openlibrary.org"
-        _append_deduped_passage(
-            passages, seen_chunks, text=text, source=source, url=url
-        )
+        _format_openlibrary_passage(doc, passages, seen_chunks)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
@@ -1042,36 +1202,19 @@ def fetch_stackexchange_passages(
         logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
-    try:
-        response = requests.get(
-            STACKEXCHANGE_SEARCH_API,
-            params={
-                "order": "desc",
-                "sort": "relevance",
-                "q": query,
-                "site": site,
-                "pagesize": top_k,
-                "filter": "withbody",
-            },
-            headers=WIKI_HEADERS,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as err:  # pragma: no cover - defensive network isolation
-        logger.warning("Stack Exchange request failed: %s", err)
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    if response.status_code >= 400:
-        logger.warning(
-            "Stack Exchange request failed: HTTP %s", int(response.status_code)
-        )
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    try:
-        payload = response.json()
-    except Exception as err:  # pragma: no cover - defensive parsing guard
-        logger.warning("Stack Exchange response parse failed: %s", err)
+    payload = _safe_request_json(
+        STACKEXCHANGE_SEARCH_API,
+        {
+            "order": "desc",
+            "sort": "relevance",
+            "q": query,
+            "site": site,
+            "pagesize": top_k,
+            "filter": "withbody",
+        },
+        source="StackExchange",
+    )
+    if payload is None:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
@@ -1085,23 +1228,7 @@ def fetch_stackexchange_passages(
     for item in items:
         if not isinstance(item, dict):
             continue
-        title = _stringify(item.get("title"))
-        body_html = _stringify(item.get("body") or item.get("excerpt"))
-        body = _strip_html(body_html)
-        tags = item.get("tags")
-        tag_text = ""
-        if isinstance(tags, list):
-            tag_text = ", ".join(_stringify(tag) for tag in tags[:8] if tag)
-        text = " ".join(
-            part
-            for part in [title, body, f"Tags: {tag_text}" if tag_text else ""]
-            if part
-        )
-        source = f"StackExchange:{site}"
-        url = _stringify(item.get("link"))
-        _append_deduped_passage(
-            passages, seen_chunks, text=text, source=source, url=url
-        )
+        _format_stackexchange_passage(item, passages, seen_chunks, site)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
@@ -1120,27 +1247,13 @@ def fetch_dbpedia_passages(
         logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
-    try:
-        response = requests.get(
-            DBPEDIA_LOOKUP_API,
-            params={"query": query, "maxResults": top_k},
-            headers={**WIKI_HEADERS, "Accept": "application/json"},
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as err:  # pragma: no cover - defensive network isolation
-        logger.warning("DBpedia request failed: %s", err)
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    if response.status_code >= 400:
-        logger.warning("DBpedia request failed: HTTP %s", int(response.status_code))
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    try:
-        payload = response.json()
-    except Exception as err:  # pragma: no cover - defensive parsing guard
-        logger.warning("DBpedia response parse failed: %s", err)
+    payload = _safe_request_json(
+        DBPEDIA_LOOKUP_API,
+        {"query": query, "maxResults": top_k},
+        source="DBpedia",
+        headers={**WIKI_HEADERS, "Accept": "application/json"},
+    )
+    if payload is None:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
@@ -1154,41 +1267,7 @@ def fetch_dbpedia_passages(
     for doc in docs:
         if not isinstance(doc, dict):
             continue
-        label = doc.get("label")
-        if isinstance(label, list):
-            source = _stringify(label[0] if label else "")
-        else:
-            source = _stringify(label)
-        comment = doc.get("comment")
-        if isinstance(comment, list):
-            comment_text = _stringify(comment[0] if comment else "")
-        else:
-            comment_text = _stringify(comment)
-        classes = doc.get("typeName")
-        class_text = ""
-        if isinstance(classes, list):
-            class_text = ", ".join(_stringify(class_name) for class_name in classes[:8])
-        url_values = doc.get("resource")
-        if isinstance(url_values, list) and url_values:
-            url = _stringify(url_values[0])
-        else:
-            url = _stringify(url_values)
-        text = " ".join(
-            part
-            for part in [
-                source,
-                comment_text,
-                f"Classes: {class_text}" if class_text else "",
-            ]
-            if part
-        )
-        _append_deduped_passage(
-            passages,
-            seen_chunks,
-            text=text,
-            source=source or "DBpedia",
-            url=url or "https://dbpedia.org",
-        )
+        _format_dbpedia_passage(doc, passages, seen_chunks)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
@@ -1211,7 +1290,6 @@ def fetch_dbpedia_sparql_passages(
         logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
-    # Sanitize to avoid SPARQL injection via the string literal
     safe_query = re.sub(r'["\'\\]', " ", normalized_query).strip()
     sparql = (
         "PREFIX dbo: <http://dbpedia.org/ontology/> "
@@ -1225,29 +1303,12 @@ def fetch_dbpedia_sparql_passages(
         f"}} LIMIT {top_k}"
     )
 
-    try:
-        response = requests.get(
-            DBPEDIA_SPARQL_ENDPOINT,
-            params={"query": sparql, "format": "application/sparql-results+json"},
-            headers=WIKI_HEADERS,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as err:  # pragma: no cover - defensive network isolation
-        logger.warning("DBpedia SPARQL request failed: %s", err)
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    if response.status_code >= 400:
-        logger.warning(
-            "DBpedia SPARQL request failed: HTTP %s", int(response.status_code)
-        )
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    try:
-        payload = response.json()
-    except Exception as err:  # pragma: no cover - defensive parsing guard
-        logger.warning("DBpedia SPARQL response parse failed: %s", err)
+    payload = _safe_request_json(
+        DBPEDIA_SPARQL_ENDPOINT,
+        {"query": sparql, "format": "application/sparql-results+json"},
+        source="DBpedia SPARQL",
+    )
+    if payload is None:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
@@ -1265,31 +1326,7 @@ def fetch_dbpedia_sparql_passages(
     for binding in bindings:
         if not isinstance(binding, dict):
             continue
-        label_node = binding.get("label", {})
-        abstract_node = binding.get("abstract", {})
-        resource_node = binding.get("resource", {})
-        label = _stringify(
-            label_node.get("value") if isinstance(label_node, dict) else label_node
-        )
-        abstract = _stringify(
-            abstract_node.get("value")
-            if isinstance(abstract_node, dict)
-            else abstract_node
-        )
-        url = _stringify(
-            resource_node.get("value")
-            if isinstance(resource_node, dict)
-            else resource_node
-        )
-        if not abstract:
-            continue
-        _append_deduped_passage(
-            passages,
-            seen_chunks,
-            text=abstract,
-            source=label or "DBpedia",
-            url=url or "https://dbpedia.org",
-        )
+        _format_dbpedia_sparql_passage(binding, passages, seen_chunks)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
@@ -1306,27 +1343,12 @@ def fetch_oeis_passages(query: str, *, top_k: int = WIKI_SEARCH_LIMIT) -> list[P
         logger.debug("Cache hit: %s", cache_key)
         return [Passage(**p) for p in cached]
 
-    try:
-        response = requests.get(
-            OEIS_SEARCH_API,
-            params={"q": query, "fmt": "json", "start": 0},
-            headers=WIKI_HEADERS,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as err:  # pragma: no cover - defensive network isolation
-        logger.warning("OEIS request failed: %s", err)
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    if response.status_code >= 400:
-        logger.warning("OEIS request failed: HTTP %s", int(response.status_code))
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
-        return []
-
-    try:
-        payload = response.json()
-    except Exception as err:  # pragma: no cover - defensive parsing guard
-        logger.warning("OEIS response parse failed: %s", err)
+    payload = _safe_request_json(
+        OEIS_SEARCH_API,
+        {"q": query, "fmt": "json", "start": 0},
+        source="OEIS",
+    )
+    if payload is None:
         cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
@@ -1340,37 +1362,7 @@ def fetch_oeis_passages(query: str, *, top_k: int = WIKI_SEARCH_LIMIT) -> list[P
     for item in results[:top_k]:
         if not isinstance(item, dict):
             continue
-        number = item.get("number")
-        number_str = _stringify(number)
-        try:
-            number_int = int(number_str)
-            sequence_id = f"A{number_int:06d}"
-        except Exception:
-            sequence_id = number_str or "OEIS"
-        name = _stringify(item.get("name"))
-        data = _stringify(item.get("data"))
-        comment = _stringify(item.get("comment"))
-        formula = _stringify(item.get("formula"))
-        example = _stringify(item.get("example"))
-        text = " ".join(
-            part
-            for part in [
-                name,
-                f"Data: {data}" if data else "",
-                f"Comment: {comment}" if comment else "",
-                f"Formula: {formula}" if formula else "",
-                f"Example: {example}" if example else "",
-            ]
-            if part
-        )
-        url = (
-            f"https://oeis.org/{sequence_id}"
-            if sequence_id.startswith("A")
-            else "https://oeis.org"
-        )
-        _append_deduped_passage(
-            passages, seen_chunks, text=text, source=sequence_id, url=url
-        )
+        _format_oeis_passage(item, passages, seen_chunks)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))
