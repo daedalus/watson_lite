@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import copy
+import json
 import logging
+import os
 from typing import Any
 
 import numpy as np
@@ -46,6 +50,36 @@ class VectorRetriever:
         self.index: Any = None  # faiss.IndexFlatIP once built
         self.passages: list[Passage] = []
         self.dim = self.model.get_sentence_embedding_dimension()
+
+    def save(self, path: str) -> None:
+        os.makedirs(path, exist_ok=True)
+        faiss.write_index(self.index, os.path.join(path, "faiss.index"))
+        meta = [
+            {"text": p.text, "source": p.source, "url": p.url} for p in self.passages
+        ]
+        with open(os.path.join(path, "passages.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+
+    @classmethod
+    def load(cls, path: str, model_name: str = EMBED_MODEL) -> VectorRetriever:
+        if SentenceTransformer is None or faiss is None:
+            raise ImportError(
+                "Vector retrieval dependencies are missing. "
+                "Install watson-lite with the 'vector' or 'full' extra."
+            )
+        retriever = cls.__new__(cls)
+        retriever.model = SentenceTransformer(model_name)
+        retriever.index = faiss.read_index(os.path.join(path, "faiss.index"))
+        with open(os.path.join(path, "passages.json"), encoding="utf-8") as f:
+            meta: list[dict[str, Any]] = json.load(f)
+        retriever.passages = [Passage(**m) for m in meta]
+        retriever.dim = retriever.model.get_embedding_dimension()
+        logger.debug(
+            "Loaded FAISS index: %d vectors from %s",
+            retriever.index.ntotal,
+            path,
+        )
+        return retriever
 
     def index_passages(self, passages: list[Passage]) -> None:
         self.passages = passages

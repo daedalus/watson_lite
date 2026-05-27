@@ -141,7 +141,7 @@ class TestWatsonLite:
         assert self.pipeline.graph is None
         assert self.pipeline.ranker is None
         assert self.pipeline.reader is None
-        assert self.pipeline._last_passage_hash is None
+        assert len(self.pipeline._passage_cache) == 0
 
     def test_constructor_registers_public_dataset_providers(self) -> None:
         provider_names = set(self.pipeline.dataset_query_engine._providers.keys())

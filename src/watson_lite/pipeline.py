@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import os
 import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -35,9 +36,9 @@ logger = logging.getLogger(__name__)
 _NON_WORD = re.compile(r"\W+")
 
 
-def _passages_hash(passages: list[Passage]) -> str:
-    """Return a compact hash that identifies a list of passages by content."""
-    parts = "|".join(f"{p.source}:{p.url}:{p.text}" for p in passages)
+def _passage_content_key(p: Passage) -> str:
+    """Return a stable content hash for a single passage."""
+    parts = f"{p.source}:{p.url}:{p.text}"
     return hashlib.sha256(parts.encode()).hexdigest()
 
 
@@ -65,8 +66,31 @@ class WatsonLite:
         self.scorer = ConfidenceScorer(
             confidence_threshold=self.config.confidence_threshold
         )
-        self._last_passage_hash: str | None = None
+        # Per-passage content-addressable cache: key = _passage_content_key
+        self._passage_cache: dict[str, Passage] = {}
+        self._index_loaded = False
+        self._load_prebuilt_index()
         logger.info("Core components loaded. Heavy models will load lazily.")
+
+    def _load_prebuilt_index(self) -> None:
+        index_dir = self.config.index_dir
+        if index_dir is None:
+            return
+        bm25_path = os.path.join(index_dir, "bm25")
+        vector_path = os.path.join(index_dir, "vector")
+        if os.path.isdir(bm25_path):
+            self.bm25 = BM25Retriever.load(bm25_path)
+            self._passage_cache = {
+                _passage_content_key(p): p for p in self.bm25.passages
+            }
+            logger.info("Loaded pre-built BM25 index from %s", bm25_path)
+        if os.path.isdir(vector_path) and self.config.vector_retrieval:
+            self.vector = None
+            try:
+                self.vector = VectorRetriever.load(vector_path)
+            except ImportError:
+                logger.warning("Vector dependencies missing; skipping FAISS index load")
+        self._index_loaded = True
 
     def _get_nlp(self) -> NLPProcessor:
         if self.nlp is None:
@@ -182,6 +206,7 @@ class WatsonLite:
         return cast("bool", is_fallback_answer_text(answer.answer))
 
     @staticmethod
+    @staticmethod
     def _dedupe_passages(passages: list[Passage]) -> list[Passage]:
         seen_texts: set[str] = set()
         deduped: list[Passage] = []
@@ -192,6 +217,74 @@ class WatsonLite:
             seen_texts.add(dedup_key)
             deduped.append(passage)
         return deduped
+
+    def _needs_reindex(self, passages: list[Passage]) -> bool:
+        new_keys = {_passage_content_key(p) for p in passages}
+        existing_keys = set(self._passage_cache.keys())
+        if new_keys == existing_keys:
+            return False
+        self._passage_cache = {_passage_content_key(p): p for p in passages}
+        return True
+
+    def _run_retrieval(
+        self,
+        question: str,
+        parsed: ParsedQuestion,
+        entity_names: list[str],
+        stage_t0: float,
+        verbose: bool,
+    ) -> tuple[int, list[Passage], list[Passage], float] | None:
+        if self._index_loaded:
+            passages = list(self._passage_cache.values())
+            bm25_results = self.bm25.retrieve(
+                question, top_k=self.config.retrieval_top_k
+            )
+            vector_results = (
+                self.vector.retrieve(question, top_k=self.config.retrieval_top_k)
+                if self.vector is not None
+                else []
+            )
+            elapsed = round(time.perf_counter() - stage_t0, 4)
+            self._log_detail(
+                verbose,
+                "Pre-built index: %d total passages",
+                len(passages),
+            )
+            if not passages:
+                return None
+            return len(passages), bm25_results, vector_results, elapsed
+
+        queries = self._generate_queries(parsed)
+        self._log_detail(verbose, "Search queries: %s", queries)
+
+        all_passages: list[Passage] = []
+        for query in queries:
+            all_passages.extend(
+                self.dataset_query_engine.query(
+                    query, top_k=self.config.wikipedia_top_k_per_query
+                )
+            )
+
+        if entity_names:
+            self._log_detail(verbose, "Entity direct page fetch: %s", entity_names)
+            for entity_text in entity_names:
+                all_passages.extend(fetch_wikipedia_page_by_title(entity_text))
+
+        passages = self._dedupe_passages(all_passages)
+        if not passages:
+            return None
+
+        needs_reindex = self._needs_reindex(passages)
+        bm25_results, vector_results = self._retrieve_parallel(
+            question,
+            passages,
+            needs_reindex,
+            vector_retriever=self._get_vector(),
+            vector_enabled=self.config.vector_retrieval,
+            top_k=self.config.retrieval_top_k,
+        )
+        elapsed = round(time.perf_counter() - stage_t0, 4)
+        return len(passages), bm25_results, vector_results, elapsed
 
     def _extract_candidates_for_sub_question(
         self,
@@ -347,42 +440,20 @@ class WatsonLite:
 
         self._log_step(verbose, 2, "Parallel retrieval (BM25 + Vector)...")
         stage_t0 = time.perf_counter()
-        queries = self._generate_queries(parsed)
-        self._log_detail(verbose, "Search queries: %s", queries)
-
-        all_passages: list[Passage] = []
-        for query in queries:
-            all_passages.extend(
-                self.dataset_query_engine.query(
-                    query, top_k=self.config.wikipedia_top_k_per_query
-                )
-            )
 
         entity_names = self._resolve_entity_names(parsed)
-        if entity_names:
-            self._log_detail(verbose, "Entity direct page fetch: %s", entity_names)
-            for entity_text in entity_names:
-                all_passages.extend(fetch_wikipedia_page_by_title(entity_text))
-
-        passages = self._dedupe_passages(all_passages)
-
-        if not passages:
+        retrieval_result = self._run_retrieval(
+            question, parsed, entity_names, stage_t0, verbose
+        )
+        if retrieval_result is None:
             return self._build_empty_answer(t0, stage_latencies, cache_before)
 
-        passages_fetched = len(passages)
-        passage_hash = _passages_hash(passages)
-        needs_reindex = passage_hash != self._last_passage_hash
-        self._last_passage_hash = passage_hash
-
-        bm25_results, vector_results = self._retrieve_parallel(
-            question,
-            passages,
-            needs_reindex,
-            vector_retriever=self._get_vector(),
-            vector_enabled=self.config.vector_retrieval,
-            top_k=self.config.retrieval_top_k,
-        )
-        stage_latencies["retrieval"] = round(time.perf_counter() - stage_t0, 4)
+        (
+            passages_fetched,
+            bm25_results,
+            vector_results,
+            stage_latencies["retrieval"],
+        ) = retrieval_result
 
         self._log_detail(verbose, "BM25: %d passages", len(bm25_results))
         self._log_detail(verbose, "Vector: %d passages", len(vector_results))
@@ -638,9 +709,7 @@ class WatsonLite:
         graph_results: list[GraphResult],
         verbose: bool,
     ) -> tuple[FinalAnswer, list[RankedPassage], int, list[AnswerCandidate]] | None:
-        refined_hash = _passages_hash(refined_passages)
-        refined_needs_reindex = refined_hash != self._last_passage_hash
-        self._last_passage_hash = refined_hash
+        refined_needs_reindex = self._needs_reindex(refined_passages)
         refined_bm25, refined_vector = self._retrieve_parallel(
             refined_query,
             refined_passages,

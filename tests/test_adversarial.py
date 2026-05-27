@@ -759,25 +759,25 @@ class TestPipelineAdversarial:
         assert result is not None
 
     def test_second_call_uses_cached_passage_hash(self) -> None:
-        from watson_lite.pipeline import WatsonLite, _passages_hash
+        from watson_lite.pipeline import WatsonLite, _passage_content_key
 
-        ps = [Passage("hello world", "src", "url")]
-        h1 = _passages_hash(ps)
-        h2 = _passages_hash(ps)
+        p = Passage("hello world", "src", "url")
+        h1 = _passage_content_key(p)
+        h2 = _passage_content_key(p)
         assert h1 == h2
 
     def test_passages_hash_differs_with_different_source(self) -> None:
-        from watson_lite.pipeline import _passages_hash
+        from watson_lite.pipeline import _passage_content_key
 
-        h1 = _passages_hash([Passage("text", "src1", "url")])
-        h2 = _passages_hash([Passage("text", "src2", "url")])
+        h1 = _passage_content_key(Passage("text", "src1", "url"))
+        h2 = _passage_content_key(Passage("text", "src2", "url"))
         assert h1 != h2
 
     def test_passages_hash_differs_with_different_url(self) -> None:
-        from watson_lite.pipeline import _passages_hash
+        from watson_lite.pipeline import _passage_content_key
 
-        h1 = _passages_hash([Passage("text", "src", "url1")])
-        h2 = _passages_hash([Passage("text", "src", "url2")])
+        h1 = _passage_content_key(Passage("text", "src", "url1"))
+        h2 = _passage_content_key(Passage("text", "src", "url2"))
         assert h1 != h2
 
 
@@ -1587,7 +1587,8 @@ class TestE2EFailures:
         wl.reader = MagicMock()
         wl.scorer = MagicMock()
         wl.dataset_query_engine = MagicMock()
-        wl._last_passage_hash = None
+        wl._passage_cache = {}
+        wl._index_loaded = False
         wl.logger = MagicMock()
         test_passages = [
             Passage(

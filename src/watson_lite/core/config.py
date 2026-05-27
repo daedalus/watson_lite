@@ -23,6 +23,7 @@ class FeatureConfig:
     bidirectional_validation: bool = True
     iterative_retrieval: bool = True
     semantic_nlp: bool = False
+    index_dir: str | None = None
     dataset_sources: tuple[str, ...] = ("wikipedia",)
     elasticsearch_url: str | None = None
     elasticsearch_index: str | None = None

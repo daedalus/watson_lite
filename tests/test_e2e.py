@@ -209,27 +209,25 @@ class TestE2EPipeline:
         assert "retrieve" in result.answer.lower() or result.answer != ""
 
     def test_reindex_skipped_second_call(self, patched_pipeline) -> None:
-        """Calling answer() twice with the same passages must produce the same hash."""
+        """Calling answer() twice with the same passages must hit the cache."""
         watson, _, _ = patched_pipeline
-        # The fixture already configures mock_fetch to return 2 passages.
         watson.answer("Who designed it?", verbose=False)
-        first_hash = watson._last_passage_hash
+        keys = set(watson._passage_cache.keys())
+        assert len(keys) == 2
 
         watson.answer("Who designed it?", verbose=False)
-        assert watson._last_passage_hash == first_hash
+        assert set(watson._passage_cache.keys()) == keys
 
     def test_different_passages_triggers_reindex(self, patched_pipeline) -> None:
         watson, mock_fetch, _ = patched_pipeline
-        # First call uses the fixture's 2-passage set.
         watson.answer("question one", verbose=False)
-        hash_one = watson._last_passage_hash
+        keys_one = set(watson._passage_cache.keys())
 
-        # Switch to a different set of passages (still 2, so FAISS mock is valid).
         mock_fetch.return_value = _make_passages(_PARIS_PASSAGE, _EIFFEL_PASSAGE)
         watson.answer("question two", verbose=False)
-        hash_two = watson._last_passage_hash
+        keys_two = set(watson._passage_cache.keys())
 
-        assert hash_one != hash_two
+        assert keys_one != keys_two
 
     def test_question_type_who_bonus_applied(self, patched_pipeline) -> None:
         """'Who' question with a multi-word capitalized answer gets a QT bonus.

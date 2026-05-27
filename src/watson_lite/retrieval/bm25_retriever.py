@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import copy
 import html
+import json
 import logging
 import os
 import re
@@ -1382,6 +1385,27 @@ class BM25Retriever:
         retriever.index(tokenized)
         self.retriever = retriever
         logger.debug("Indexed %d passages", len(passages))
+
+    def save(self, path: str) -> None:
+        os.makedirs(path, exist_ok=True)
+        self.retriever.save(path, show_progress=False)
+        meta = [
+            {"text": p.text, "source": p.source, "url": p.url} for p in self.passages
+        ]
+        with open(os.path.join(path, "passages.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+
+    @classmethod
+    def load(cls, path: str) -> BM25Retriever:
+        retriever = cls.__new__(cls)
+        retriever.retriever = bm25s.BM25.load(path, load_corpus=False)
+        with open(os.path.join(path, "passages.json"), encoding="utf-8") as f:
+            meta: list[dict[str, Any]] = json.load(f)
+        retriever.passages = [Passage(**m) for m in meta]
+        logger.debug(
+            "Loaded BM25 index: %d passages from %s", len(retriever.passages), path
+        )
+        return retriever
 
     def retrieve(self, query: str, top_k: int = 10) -> list[Passage]:
         if not self.retriever or not self.passages:

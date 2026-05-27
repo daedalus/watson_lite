@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 from dataclasses import asdict, replace
 from importlib.metadata import PackageNotFoundError
@@ -8,13 +9,16 @@ from importlib.metadata import version as pkg_version
 
 from watson_lite.core.cache import get_cache
 from watson_lite.core.config import FeatureConfig
-from watson_lite.core.models import FinalAnswer
+from watson_lite.core.models import FinalAnswer, Passage
 from watson_lite.evaluation.benchmark_runner import (
     RegressionThresholds,
     run_benchmark_profiles,
 )
 from watson_lite.pipeline import WatsonLite
+from watson_lite.retrieval.bm25_retriever import BM25Retriever
 from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
+from watson_lite.retrieval.dataset_query_engine import DatasetQueryEngine
+from watson_lite.retrieval.vector_retriever import VectorRetriever
 
 try:
     _VERSION = pkg_version("watson-lite")
@@ -57,6 +61,88 @@ def _add_input_output_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Include diagnostics in text output",
     )
+
+
+def _build_build_index_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="watson-lite build-index")
+    parser.add_argument(
+        "--index-dir", required=True, help="Directory to write the index to"
+    )
+    parser.add_argument(
+        "--queries",
+        nargs="+",
+        default=["wikipedia", "artificial intelligence", "machine learning"],
+        help="Search queries to ingest into the index",
+    )
+    parser.add_argument("--queries-file", type=str, help="File with one query per line")
+    parser.add_argument(
+        "--datasets",
+        type=_parse_datasets,
+        default=("wikipedia",),
+        help="Comma-separated datasets to index",
+    )
+    parser.add_argument(
+        "--wiki-top-k", type=int, default=5, help="Passages per query per dataset"
+    )
+    parser.add_argument(
+        "--no-vector",
+        action="store_true",
+        help="Skip building the FAISS vector index",
+    )
+    return parser
+
+
+def _run_build_index(argv: list[str]) -> int:
+    parser = _build_build_index_parser()
+    args = parser.parse_args(argv)
+
+    config = FeatureConfig.baseline()
+    registry = build_dataset_plugin_registry(config)
+    engine = DatasetQueryEngine(
+        providers=registry.provider_tuple(),
+        enabled_datasets=args.datasets,
+    )
+
+    queries = list(args.queries)
+    if args.queries_file:
+        with open(args.queries_file, encoding="utf-8") as f:
+            queries.extend(line.strip() for line in f if line.strip())
+
+    all_passages: list[Passage] = []
+    seen_texts: set[str] = set()
+    for query in queries:
+        print(f"Fetching: {query}")
+        for p in engine.query(query, top_k=args.wiki_top_k):
+            dedup_key = " ".join(p.text.split())[:200]
+            if dedup_key not in seen_texts:
+                seen_texts.add(dedup_key)
+                all_passages.append(p)
+
+    print(f"Total unique passages: {len(all_passages)}")
+    if not all_passages:
+        print("No passages fetched; nothing to index.")
+        return 1
+
+    print("Building BM25 index...")
+    bm25 = BM25Retriever()
+    bm25.index(all_passages)
+    bm25_dir = os.path.join(args.index_dir, "bm25")
+    bm25.save(bm25_dir)
+    print(f"BM25 index saved to {bm25_dir}")
+
+    if not args.no_vector:
+        try:
+            print("Building FAISS index...")
+            vector = VectorRetriever()
+            vector.index_passages(all_passages)
+            vector_dir = os.path.join(args.index_dir, "vector")
+            vector.save(vector_dir)
+            print(f"FAISS index saved to {vector_dir}")
+        except ImportError as exc:
+            print(f"Vector dependencies not available, skipping FAISS: {exc}")
+
+    print("Index build complete.")
+    return 0
 
 
 def _add_feature_toggle_args(parser: argparse.ArgumentParser) -> None:
@@ -183,6 +269,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Clear the local cache before answering or benchmarking",
     )
     _add_feature_toggle_args(parser)
+    parser.add_argument(
+        "--index-dir",
+        type=str,
+        default=None,
+        help="Directory with pre-built BM25/FAISS indices (skips online fetching)",
+    )
     parser.add_argument("--wiki-top-k", type=int, default=5)
     _add_dataset_args(parser)
     parser.add_argument("--retrieval-top-k", type=int, default=20)
@@ -224,6 +316,7 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
     enabled = tuple(d for d in args.datasets if d not in (args.exclude_datasets or ()))
     overrides = {
         "dataset_sources": enabled,
+        "index_dir": args.index_dir,
         "elasticsearch_url": args.elasticsearch_url,
         "elasticsearch_index": args.elasticsearch_index,
         "huggingface_dataset": args.huggingface_dataset,
@@ -486,11 +579,14 @@ def _run_plugins_command(argv: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] == "plugins":
-        return _run_plugins_command(sys.argv[2:])
+    argv = sys.argv[1:]
+    if argv and argv[0] == "plugins":
+        return _run_plugins_command(argv[1:])
+    if argv and argv[0] == "build-index":
+        return _run_build_index(argv[1:])
 
     parser = _build_parser()
-    args = parser.parse_args(sys.argv[1:])
+    args = parser.parse_args(argv)
     _setup_logging(args)
     config = _build_config(args)
 
