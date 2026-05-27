@@ -106,6 +106,32 @@ LAT_QID_MAP: dict[str, list[str]] = {
 }
 
 
+def _detect_question_word(doc: Doc) -> str | None:
+    """Return the lowercased text of the first interrogative token, or None."""
+    for token in doc:
+        if token.is_punct:
+            continue
+        if token.pos_ == "PRON":
+            pron_type = token.morph.get("PronType")
+            if not pron_type or bool(set(pron_type) & {"Int", "Rel", "Ind"}):
+                return token.text.lower()
+        if token.pos_ == "SCONJ" and token.dep_ == "advmod":
+            return token.text.lower()
+        if token.pos_ == "DET" and token.dep_ == "det":
+            return token.text.lower()
+        # ADP whose head is interrogative PRON, e.g. "por" → "qué"
+        if token.pos_ == "ADP":
+            if token.head.pos_ == "PRON":
+                head_pron_type = token.head.morph.get("PronType")
+                if not head_pron_type or bool(
+                    set(head_pron_type) & {"Int", "Rel", "Ind"}
+                ):
+                    return f"{token.text.lower()} {token.head.text.lower()}"
+            return None
+        return None
+    return None
+
+
 def _extract_lat(doc: Doc, question_type: str = "") -> tuple[str | None, list[str]]:
     """Extract Lexical Answer Type using spaCy structural analysis.
 
@@ -247,6 +273,15 @@ class NLPProcessor:
                 return "unknown"
             if token.pos_ == "SCONJ" and token.dep_ == "advmod":
                 return "what"
+            # ADP whose head is interrogative PRON, e.g. "por" → "qué"
+            if token.pos_ == "ADP":
+                if token.head.pos_ == "PRON":
+                    head_pron_type = token.head.morph.get("PronType")
+                    if not head_pron_type or bool(
+                        set(head_pron_type) & {"Int", "Rel", "Ind"}
+                    ):
+                        return "what"
+                return "unknown"
             return "unknown"
         return "unknown"
 
@@ -369,12 +404,14 @@ class NLPProcessor:
         doc = self.nlp(normalized)
         question_type = self.classify_question(question)
         lat, lat_qids = _extract_lat(doc, question_type)
+        question_word = _detect_question_word(doc)
         semantic_enabled = semantic_nlp or self.semantic_nlp
         srl_frames = _extract_srl_frames(doc) if semantic_enabled else []
         coref_clusters = self._resolve_coreference(doc) if semantic_enabled else []
         return ParsedQuestion(
             raw=question,
             question_type=question_type,
+            question_word=question_word,
             entities=self.extract_entities(doc),
             noun_chunks=[chunk.text for chunk in doc.noun_chunks],
             root_verb=self.get_root_verb(doc),

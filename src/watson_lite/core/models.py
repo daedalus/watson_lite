@@ -98,5 +98,6 @@ class ParsedQuestion:
     keywords: list[str] = field(default_factory=list)
     lat: str | None = None
     lat_qids: list[str] = field(default_factory=list)
+    question_word: str | None = None
     srl_frames: list[dict[str, str]] = field(default_factory=list)
     coref_clusters: list[list[str]] = field(default_factory=list)

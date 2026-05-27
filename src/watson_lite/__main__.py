@@ -89,6 +89,12 @@ def _build_build_index_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip building the FAISS vector index",
     )
+    parser.add_argument(
+        "--embed-model",
+        type=str,
+        default=None,
+        help="SentenceTransformer embedding model (default: paraphrase-multilingual-MiniLM-L12-v2)",
+    )
     return parser
 
 
@@ -132,8 +138,9 @@ def _run_build_index(argv: list[str]) -> int:
 
     if not args.no_vector:
         try:
-            print("Building FAISS index...")
-            vector = VectorRetriever()
+            embed_model = args.embed_model or EMBED_MODEL
+            print(f"Building FAISS index (model: {embed_model})...")
+            vector = VectorRetriever(model_name=embed_model)
             vector.index_passages(all_passages)
             vector_dir = os.path.join(args.index_dir, "vector")
             vector.save(vector_dir)

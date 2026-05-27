@@ -2,7 +2,7 @@
 
 import pytest
 
-from watson_lite.core.nlp import _extract_lat
+from watson_lite.core.nlp import _detect_question_word, _extract_lat
 
 
 @pytest.fixture(scope="module")
@@ -104,3 +104,57 @@ class TestExtractLatSpanish:
         lat, qids = _extract_lat(doc)
         assert lat == "parís"
         assert qids == []
+
+
+class TestDetectQuestionWord:
+    def test_english_who(self, nlp) -> None:
+        doc = nlp("Who built the Eiffel Tower?")
+        assert _detect_question_word(doc) == "who"
+
+    def test_english_what(self, nlp) -> None:
+        doc = nlp("What is the capital of France?")
+        assert _detect_question_word(doc) == "what"
+
+    def test_english_when(self, nlp) -> None:
+        doc = nlp("When was it built?")
+        assert _detect_question_word(doc) == "when"
+
+    def test_english_where(self, nlp) -> None:
+        doc = nlp("Where is Paris?")
+        assert _detect_question_word(doc) == "where"
+
+    def test_english_why(self, nlp) -> None:
+        doc = nlp("Why is the sky blue?")
+        assert _detect_question_word(doc) == "why"
+
+    def test_english_how(self, nlp) -> None:
+        doc = nlp("How tall is it?")
+        assert _detect_question_word(doc) == "how"
+
+    def test_english_which(self, nlp) -> None:
+        doc = nlp("Which planet is the largest?")
+        assert _detect_question_word(doc) == "which"
+
+    def test_english_unknown(self, nlp) -> None:
+        doc = nlp("Really?")
+        assert _detect_question_word(doc) is None
+
+    def test_spanish_quien(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Quién diseñó la Torre Eiffel?")
+        assert _detect_question_word(doc) == "quién"
+
+    def test_spanish_por_que(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Por qué cayó el Imperio Romano?")
+        assert _detect_question_word(doc) == "por qué"

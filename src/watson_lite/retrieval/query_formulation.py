@@ -37,22 +37,23 @@ def _add_sub_questions(
                 _add_variant(sq, variants, seen)
 
 
+_INTERROGATIVE_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "when": ("date", "year"),
+    "where": ("location",),
+    "why": ("reason",),
+    "how": ("how",),
+}
+
+
 def _add_type_suffix_queries(
-    question_type: str,
+    question_word: str | None,
     entity_texts: list[str],
     variants: list[str],
     seen: set[str],
 ) -> None:
     entity_str = " ".join(entity_texts)
-    if question_type == "when":
-        _add_variant(f"{entity_str} date", variants, seen)
-        _add_variant(f"{entity_str} year", variants, seen)
-    if question_type == "where":
-        _add_variant(f"{entity_str} location", variants, seen)
-    if question_type == "how":
-        _add_variant(f"{entity_str} how", variants, seen)
-    if question_type == "why":
-        _add_variant(f"{entity_str} reason", variants, seen)
+    for suffix in _INTERROGATIVE_SUFFIXES.get(question_word, ()):
+        _add_variant(f"{entity_str} {suffix}", variants, seen)
 
 
 def _add_entity_enriched_query(
@@ -110,7 +111,7 @@ def _augmented_queries(
     _add_sub_questions(parsed.sub_questions, parsed.raw, variants, seen)
 
     if entity_texts:
-        _add_type_suffix_queries(parsed.question_type, entity_texts, variants, seen)
+        _add_type_suffix_queries(parsed.question_word, entity_texts, variants, seen)
 
     return variants[:5]
 
@@ -136,7 +137,7 @@ def _original_queries(parsed: ParsedQuestion) -> list[str]:
     _add_sub_questions(parsed.sub_questions, parsed.raw, variants, seen)
 
     if entity_texts:
-        _add_type_suffix_queries(parsed.question_type, entity_texts, variants, seen)
+        _add_type_suffix_queries(parsed.question_word, entity_texts, variants, seen)
 
     return variants[:5]
 

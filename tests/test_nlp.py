@@ -27,6 +27,9 @@ class TestQuestionClassification:
     def test_why(self, nlp) -> None:
         assert nlp.classify_question("Why is the sky blue?") == "what"
 
+    def test_spanish_por_que(self, nlp) -> None:
+        assert nlp.classify_question("¿Por qué cayó el Imperio Romano?") == "what"
+
     def test_unknown(self, nlp) -> None:
         assert nlp.classify_question("Really?") == "unknown"
 

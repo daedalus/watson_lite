@@ -10,6 +10,7 @@ from watson_lite.retrieval.query_formulation import (
 def _make_parsed(
     raw: str = "What is the capital of France?",
     question_type: str = "what",
+    question_word: str | None = None,
     entities: list | None = None,
     noun_chunks: list[str] | None = None,
     root_verb: str | None = None,
@@ -21,6 +22,7 @@ def _make_parsed(
     return ParsedQuestion(
         raw=raw,
         question_type=question_type,
+        question_word=question_word,
         entities=entities or [],
         noun_chunks=noun_chunks or [],
         root_verb=root_verb,
@@ -122,7 +124,7 @@ class TestGenerateSearchQueriesAugmented:
     def test_when_question_adds_date_and_year(self) -> None:
         parsed = _make_parsed(
             raw="When was the Eiffel Tower built?",
-            question_type="when",
+            question_word="when",
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 12}],
         )
         queries = generate_search_queries(parsed)
@@ -131,7 +133,7 @@ class TestGenerateSearchQueriesAugmented:
     def test_where_question_adds_location(self) -> None:
         parsed = _make_parsed(
             raw="Where is the Eiffel Tower?",
-            question_type="where",
+            question_word="where",
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 12}],
         )
         queries = generate_search_queries(parsed)
@@ -140,7 +142,7 @@ class TestGenerateSearchQueriesAugmented:
     def test_how_question_adds_how_suffix(self) -> None:
         parsed = _make_parsed(
             raw="How tall is the Eiffel Tower?",
-            question_type="how",
+            question_word="how",
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 12}],
         )
         queries = generate_search_queries(parsed)
@@ -149,7 +151,7 @@ class TestGenerateSearchQueriesAugmented:
     def test_why_question_adds_reason(self) -> None:
         parsed = _make_parsed(
             raw="Why did the Roman Empire fall?",
-            question_type="why",
+            question_word="why",
             entities=[{"text": "Roman Empire", "label": "ORG", "start": 0, "end": 12}],
         )
         queries = generate_search_queries(parsed)
@@ -183,7 +185,7 @@ class TestGenerateSearchQueriesOriginal:
     def test_original_when_type_adds_date_year(self) -> None:
         parsed = _make_parsed(
             raw="When was the Eiffel Tower built?",
-            question_type="when",
+            question_word="when",
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 12}],
         )
         queries = generate_search_queries(parsed, augment_context=False)
@@ -192,7 +194,7 @@ class TestGenerateSearchQueriesOriginal:
     def test_original_where_type_adds_location(self) -> None:
         parsed = _make_parsed(
             raw="Where is Paris?",
-            question_type="where",
+            question_word="where",
             entities=[{"text": "Paris", "label": "GPE", "start": 0, "end": 5}],
         )
         queries = generate_search_queries(parsed, augment_context=False)
@@ -201,7 +203,7 @@ class TestGenerateSearchQueriesOriginal:
     def test_original_how_type_adds_how(self) -> None:
         parsed = _make_parsed(
             raw="How tall is it?",
-            question_type="how",
+            question_word="how",
             entities=[{"text": "Eiffel Tower", "label": "ORG", "start": 0, "end": 12}],
         )
         queries = generate_search_queries(parsed, augment_context=False)
@@ -210,7 +212,7 @@ class TestGenerateSearchQueriesOriginal:
     def test_original_why_type_adds_reason(self) -> None:
         parsed = _make_parsed(
             raw="Why did Rome fall?",
-            question_type="why",
+            question_word="why",
             entities=[{"text": "Rome", "label": "GPE", "start": 0, "end": 4}],
         )
         queries = generate_search_queries(parsed, augment_context=False)

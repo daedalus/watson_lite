@@ -1,10 +1,13 @@
+import json
+import logging
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from watson_lite.core.models import Passage
-from watson_lite.retrieval.vector_retriever import VectorRetriever
+from watson_lite.retrieval.vector_retriever import EMBED_MODEL, VectorRetriever
 
 
 class TestVectorRetriever:
@@ -185,3 +188,115 @@ class TestVectorRetriever:
         ):
             with pytest.raises(ImportError, match="sentence-transformers"):
                 VectorRetriever()
+
+    def test_save_writes_metadata_with_model_name(self, tmp_path: str) -> None:
+        passages = [
+            Passage(
+                text="Paris is the capital of France.",
+                source="Paris",
+                url="http://example.com",
+            ),  # noqa: E501
+        ]
+        self.mock_model.encode.return_value = np.array([[0.1] * 384], dtype="float32")
+        self.retriever.index_passages(passages)
+        self.retriever.save(tmp_path)
+
+        meta_path = os.path.join(tmp_path, "metadata.json")
+        assert os.path.isfile(meta_path)
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        assert meta["embed_model"] == EMBED_MODEL
+
+    def test_load_raises_on_model_mismatch(
+        self, tmp_path: str, caplog: pytest.LogCaptureFixture
+    ) -> None:  # noqa: E501
+        self.st_patcher.stop()
+        self.faiss_patcher.stop()
+
+        with (
+            patch(
+                "watson_lite.retrieval.vector_retriever.SentenceTransformer"
+            ) as mock_cls,
+            patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,
+        ):
+            mock_model = MagicMock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_cls.return_value = mock_model
+            mock_idx = MagicMock()
+            mock_idx.ntotal = 2
+            mock_faiss.read_index.return_value = mock_idx
+
+            # Write metadata claiming a different model
+            meta_path = os.path.join(tmp_path, "metadata.json")
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump({"embed_model": "some-other-model"}, f)
+
+            # Write dummy passages.json so load can proceed past that
+            with open(
+                os.path.join(tmp_path, "passages.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump([], f)
+
+            with pytest.raises(ValueError, match="some-other-model"):
+                VectorRetriever.load(tmp_path, model_name="requested-model")
+
+    def test_load_succeeds_on_model_match(self, tmp_path: str) -> None:
+        self.st_patcher.stop()
+        self.faiss_patcher.stop()
+
+        with (
+            patch(
+                "watson_lite.retrieval.vector_retriever.SentenceTransformer"
+            ) as mock_cls,
+            patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,
+        ):
+            mock_model = MagicMock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_cls.return_value = mock_model
+            mock_idx = MagicMock()
+            mock_idx.ntotal = 2
+            mock_faiss.read_index.return_value = mock_idx
+
+            meta_path = os.path.join(tmp_path, "metadata.json")
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump({"embed_model": "matching-model"}, f)
+
+            with open(
+                os.path.join(tmp_path, "passages.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump([], f)
+
+            r = VectorRetriever.load(tmp_path, model_name="matching-model")
+            assert r.model_name == "matching-model"
+
+    def test_load_without_metadata_warns_and_proceeds(
+        self, tmp_path: str, caplog: pytest.LogCaptureFixture
+    ) -> None:  # noqa: E501
+        self.st_patcher.stop()
+        self.faiss_patcher.stop()
+
+        with (
+            patch(
+                "watson_lite.retrieval.vector_retriever.SentenceTransformer"
+            ) as mock_cls,
+            patch("watson_lite.retrieval.vector_retriever.faiss") as mock_faiss,
+        ):
+            mock_model = MagicMock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_cls.return_value = mock_model
+            mock_idx = MagicMock()
+            mock_idx.ntotal = 2
+            mock_faiss.read_index.return_value = mock_idx
+
+            with open(
+                os.path.join(tmp_path, "passages.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump([], f)
+
+            with caplog.at_level(
+                logging.WARNING, logger="watson_lite.retrieval.vector_retriever"
+            ):
+                r = VectorRetriever.load(tmp_path, model_name="fallback-model")
+            assert r.model_name == "fallback-model"
+            assert "No metadata found" in caplog.text
+            assert "fallback-model" in caplog.text

@@ -46,6 +46,7 @@ class VectorRetriever:
                 "'vector' or 'full' extra."
             ) from (_SENTENCE_TRANSFORMERS_IMPORT_ERROR or _FAISS_IMPORT_ERROR)
         logger.debug("Loading embedding model: %s", model_name)
+        self.model_name = model_name
         self.model = SentenceTransformer(model_name)
         self.index: Any = None  # faiss.IndexFlatIP once built
         self.passages: list[Passage] = []
@@ -59,6 +60,8 @@ class VectorRetriever:
         ]
         with open(os.path.join(path, "passages.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
+        with open(os.path.join(path, "metadata.json"), "w", encoding="utf-8") as f:
+            json.dump({"embed_model": self.model_name}, f, ensure_ascii=False)
 
     @classmethod
     def load(cls, path: str, model_name: str = EMBED_MODEL) -> VectorRetriever:
@@ -67,13 +70,33 @@ class VectorRetriever:
                 "Vector retrieval dependencies are missing. "
                 "Install watson-lite with the 'vector' or 'full' extra."
             )
+        metadata_path = os.path.join(path, "metadata.json")
+        if os.path.isfile(metadata_path):
+            with open(metadata_path, encoding="utf-8") as f:
+                metadata: dict[str, Any] = json.load(f)
+            saved_model = metadata.get("embed_model")
+            if saved_model is not None and saved_model != model_name:
+                raise ValueError(
+                    f"FAISS index was built with embed model '{saved_model}' "
+                    f"but '{model_name}' was requested. "
+                    "Use the same --embed-model or rebuild the index."
+                )
+        else:
+            logger.warning(
+                "No metadata found at %s — cannot verify model name. "
+                "Proceeding with '%s'.",
+                metadata_path,
+                model_name,
+            )
+
         retriever = cls.__new__(cls)
+        retriever.model_name = model_name
         retriever.model = SentenceTransformer(model_name)
         retriever.index = faiss.read_index(os.path.join(path, "faiss.index"))
         with open(os.path.join(path, "passages.json"), encoding="utf-8") as f:
             meta: list[dict[str, Any]] = json.load(f)
         retriever.passages = [Passage(**m) for m in meta]
-        retriever.dim = retriever.model.get_embedding_dimension()
+        retriever.dim = retriever.model.get_sentence_embedding_dimension()
         logger.debug(
             "Loaded FAISS index: %d vectors from %s",
             retriever.index.ntotal,
