@@ -693,3 +693,69 @@ class TestMain:
             assert "pubmed" not in called_config.dataset_sources
             assert "wikipedia" in called_config.dataset_sources
             assert "wikibooks" in called_config.dataset_sources
+
+    def test_main_with_offline_dataset_dir(self) -> None:
+        with (
+            patch("watson_lite.__main__.WatsonLite") as mock_wl_cls,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "prog",
+                    "--datasets",
+                    "wikipedia_offline",
+                    "--offline-dataset-dir",
+                    "/tmp/corpora",
+                    "What",
+                    "is",
+                    "Python?",
+                ],
+            ),
+        ):
+            mock_wl = MagicMock()
+            mock_wl.answer.return_value = self._fake_answer()
+            mock_wl_cls.return_value = mock_wl
+            result = main()
+
+            assert result == 0
+            called_config = mock_wl_cls.call_args.kwargs["config"]
+            assert called_config.dataset_sources == ("wikipedia_offline",)
+            assert called_config.offline_dataset_dir == "/tmp/corpora"
+
+    def test_plugins_list_command(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with patch.object(sys, "argv", ["prog", "plugins", "list"]):
+            result = main()
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "wikipedia" in output
+        assert "wikipedia_offline" in output
+
+    def test_plugins_describe_command(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with patch.object(sys, "argv", ["prog", "plugins", "describe", "wikipedia"]):
+            result = main()
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "name: wikipedia" in output
+        assert "mode: online" in output
+
+    def test_plugins_validate_command(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["prog", "plugins", "validate", "--datasets", "wikipedia,wikipedia_offline"],
+        ):
+            result = main()
+        assert result == 0
+        assert "All plugins are available." in capsys.readouterr().out
+
+    def test_plugins_validate_command_unknown_dataset(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["prog", "plugins", "validate", "--datasets", "unknown_plugin"],
+        ):
+            result = main()
+        assert result == 1
+        assert "Unknown plugins" in capsys.readouterr().out

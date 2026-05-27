@@ -18,6 +18,7 @@ off-the-shelf pretrained models running CPU-only inference.
 - Confidence scoring using multiple signals (extraction score, span agreement, graph corroboration, rank signal)
 - SQLite3 cache for Wikipedia, Wikidata, and type-coercion responses with TTL/eviction
 - Interactive CLI and single-shot CLI modes
+- Pluggable online/offline dataset retriever plugins (including entry-point loading)
 - Extractive (span-based) answers — no text generation
 
 ### What is NOT in scope
@@ -141,6 +142,9 @@ python -m watson_lite "Who designed the Eiffel Tower?"
 
 # Interactive mode
 python -m watson_lite
+
+# Plugin management
+python -m watson_lite plugins list
 ```
 
 ## Data Formats

@@ -159,6 +159,11 @@ class TestWatsonLite:
             "elasticsearch",
             "huggingface",
         }.issubset(provider_names)
+        assert {
+            "wikipedia_offline",
+            "wikibooks_offline",
+            "huggingface_offline",
+        }.issubset(provider_names)
 
     def test_empty_question_raises(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):

@@ -30,6 +30,7 @@ class FeatureConfig:
     huggingface_config: str | None = None
     huggingface_split: str | None = None
     huggingface_token: str | None = None
+    offline_dataset_dir: str | None = None
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
     rerank_top_k: int = 10
