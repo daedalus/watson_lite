@@ -1589,6 +1589,11 @@ class TestE2EFailures:
         wl.dataset_query_engine = MagicMock()
         wl._passage_cache = {}
         wl._index_loaded = False
+        wl._nlp_cache = {"en": wl.nlp}
+        wl._vector_cache = {}
+        wl._ranker_cache = {}
+        wl._current_embed_model = "all-MiniLM-L6-v2"
+        wl._current_ce_model = "cross-encoder/ms-marco-MiniLM-L6-v2"
         wl.logger = MagicMock()
         test_passages = [
             Passage(

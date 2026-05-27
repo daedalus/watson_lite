@@ -38,6 +38,11 @@ from watson_lite.scoring.entailment import configure_entailment_model
 logger = logging.getLogger(__name__)
 _NON_WORD = re.compile(r"\W+")
 
+_ENGLISH_EMBED_MODEL = "all-MiniLM-L6-v2"
+_ENGLISH_CE_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+_MULTILINGUAL_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+_MULTILINGUAL_CE_MODEL = "cross-encoder/stsb-distilroberta-base"
+
 
 def _passage_content_key(p: Passage) -> str:
     """Return a stable content hash for a single passage."""
@@ -75,6 +80,10 @@ class WatsonLite:
         self._passage_cache: dict[str, Passage] = {}
         self._index_loaded = False
         self._nlp_cache: dict[str, NLPProcessor] = {}
+        self._vector_cache: dict[str, VectorRetriever] = {}
+        self._ranker_cache: dict[str, Ranker] = {}
+        self._current_embed_model: str = _MULTILINGUAL_EMBED_MODEL
+        self._current_ce_model: str = _MULTILINGUAL_CE_MODEL
         self._load_prebuilt_index()
         logger.info("Core components loaded. Heavy models will load lazily.")
 
@@ -93,10 +102,24 @@ class WatsonLite:
         if os.path.isdir(vector_path) and self.config.vector_retrieval:
             self.vector = None
             try:
-                self.vector = VectorRetriever.load(vector_path)
+                embed_model = self.config.embed_model or self._current_embed_model
+                loaded = VectorRetriever.load(vector_path, model_name=embed_model)
+                self._vector_cache[embed_model] = loaded
+                self.vector = loaded
             except ImportError:
                 logger.warning("Vector dependencies missing; skipping FAISS index load")
         self._index_loaded = True
+
+    def _select_models_for_language(self, language: str) -> None:
+        """Set embedding and cross-encoder models based on detected language."""
+        if self.config.embed_model is None:
+            self._current_embed_model = (
+                _ENGLISH_EMBED_MODEL if language == "en" else _MULTILINGUAL_EMBED_MODEL
+            )
+        if self.config.cross_encoder_model is None:
+            self._current_ce_model = (
+                _ENGLISH_CE_MODEL if language == "en" else _MULTILINGUAL_CE_MODEL
+            )
 
     def _get_nlp(self, language: str = "en") -> NLPProcessor:
         if language not in self._nlp_cache:
@@ -110,10 +133,10 @@ class WatsonLite:
     def _get_vector(self) -> VectorRetriever | None:
         if not self.config.vector_retrieval:
             return None
-        if self.vector is None:
-            self.vector = VectorRetriever(
-                model_name=self.config.embed_model or EMBED_MODEL
-            )
+        model = self.config.embed_model or self._current_embed_model
+        if model not in self._vector_cache:
+            self._vector_cache[model] = VectorRetriever(model_name=model)
+        self.vector = self._vector_cache[model]
         return self.vector
 
     def _get_graph(self) -> WikidataGraph:
@@ -122,11 +145,13 @@ class WatsonLite:
         return self.graph
 
     def _get_ranker(self) -> Ranker:
-        if self.ranker is None:
-            self.ranker = Ranker(
+        key = self.config.cross_encoder_model or self._current_ce_model
+        if key not in self._ranker_cache:
+            self._ranker_cache[key] = Ranker(
                 enable_cross_encoder=self.config.cross_encoder_reranking,
-                cross_encoder_model=self.config.cross_encoder_model,
+                cross_encoder_model=key,
             )
+        self.ranker = self._ranker_cache[key]
         return self.ranker
 
     def _get_reader(self) -> ExtractiveReader:
@@ -436,6 +461,8 @@ class WatsonLite:
             language = langdetect.detect(question)
         except Exception:
             language = "en"
+
+        self._select_models_for_language(language)
 
         self._log_step(verbose, 1, "NLP preprocessing...")
         stage_t0 = time.perf_counter()
