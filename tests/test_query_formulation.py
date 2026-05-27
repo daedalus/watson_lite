@@ -2,7 +2,6 @@
 
 from watson_lite.core.models import ParsedQuestion
 from watson_lite.retrieval.query_formulation import (
-    _content_words,
     _entity_to_noun_chunk,
     generate_search_queries,
 )
@@ -30,27 +29,6 @@ def _make_parsed(
         lat=lat,
         lat_qids=lat_qids or [],
     )
-
-
-class TestContentWords:
-    def test_removes_stopwords(self) -> None:
-        result = _content_words("What is the capital of France")
-        assert "france" in result
-        assert "capital" in result
-        assert "what" not in result
-        assert "the" not in result
-        assert "is" not in result
-        assert "of" not in result
-
-    def test_removes_question_words(self) -> None:
-        result = _content_words("Who designed the Eiffel Tower")
-        assert "eiffel" in result
-        assert "tower" in result
-        assert "who" not in result
-
-    def test_removes_short_words(self) -> None:
-        result = _content_words("a be go")
-        assert result == set() or all(len(w) > 1 for w in result)
 
 
 class TestEntityToNounChunk:

@@ -273,14 +273,12 @@ class NLPProcessor:
         return None
 
     def decompose_question(self, text: str) -> list[str]:
-        if self.language != "en":
-            return [text]
         doc = self.nlp(text)
         sub_questions: list[str] = []
         current: list[str] = []
 
         for token in doc:
-            if token.text in ("and", "but", "or", "?") and current:
+            if (token.pos_ == "CCONJ" or token.text == "?") and current:
                 chunk = " ".join(current).strip()
                 if len(chunk.split()) > 2:
                     sub_questions.append(chunk)
