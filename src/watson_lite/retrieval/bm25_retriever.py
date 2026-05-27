@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import bm25s
+import langdetect
 import requests
 
 from watson_lite.core.cache import get_cache, is_cache_miss
@@ -416,26 +417,45 @@ def fetch_page_by_title(  # pylint: disable=too-many-arguments
     return chunks
 
 
+def _language_subdomain(language: str) -> str:
+    """Map a language code to its Wikipedia subdomain (2-letter code)."""
+    return language if language and language != "en" else "en"
+
+
 def fetch_wikipedia_page_by_title(title: str) -> list[Passage]:
     """Fetch and chunk a single Wikipedia page by its exact title."""
+    try:
+        lang = langdetect.detect(title)
+    except Exception:
+        lang = "en"
+    subdomain = _language_subdomain(lang)
+    api_url = f"https://{subdomain}.wikipedia.org/w/api.php"
+    article_base_url = f"https://{subdomain}.wikipedia.org/wiki"
     return fetch_page_by_title(
         title,
-        api_url=WIKI_API,
-        article_base_url="https://en.wikipedia.org/wiki",
-        cache_namespace="wiki",
+        api_url=api_url,
+        article_base_url=article_base_url,
+        cache_namespace=f"wiki_{subdomain}",
     )
 
 
 def fetch_wikipedia_passages(
     query: str, *, top_k: int = WIKI_SEARCH_LIMIT
 ) -> list[Passage]:
-    """Fetch passages from Wikipedia using the generic MediaWiki fetcher."""
+    """Fetch passages from Wikipedia, auto-detecting the language subdomain."""
+    try:
+        lang = langdetect.detect(query)
+    except Exception:
+        lang = "en"
+    subdomain = _language_subdomain(lang)
+    api_url = f"https://{subdomain}.wikipedia.org/w/api.php"
+    article_base_url = f"https://{subdomain}.wikipedia.org/wiki"
     return fetch_mediawiki_passages(
         query,
         top_k=top_k,
-        api_url=WIKI_API,
-        article_base_url="https://en.wikipedia.org/wiki",
-        cache_namespace="wiki",
+        api_url=api_url,
+        article_base_url=article_base_url,
+        cache_namespace=f"wiki_{subdomain}",
     )
 
 

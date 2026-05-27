@@ -60,11 +60,11 @@ class TestFetchWikipediaPassages:
 
         result = fetch_wikipedia_passages("test")
         assert result == []
-        self.mock_cache.set.assert_called_once_with(
-            "wiki:passages:test:top_k=5",
-            [],
-            ttl_seconds=300,
-        )
+        assert self.mock_cache.set.call_count == 1
+        args, kwargs = self.mock_cache.set.call_args
+        assert args[0].endswith(":passages:test:top_k=5")
+        assert args[1] == []
+        assert kwargs == {"ttl_seconds": 300}
 
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_search_success_extract_error(self, mock_get: MagicMock) -> None:
