@@ -688,7 +688,9 @@ class TestPipelineAdversarial:
         self.mock_scorer = MagicMock()
         self.mock_scorer_cls.return_value = self.mock_scorer
 
-        self.fetch_patcher = patch("watson_lite.pipeline.fetch_wikipedia_passages")
+        self.fetch_patcher = patch(
+            "watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages"
+        )
         self.mock_fetch = self.fetch_patcher.start()
 
         from watson_lite.pipeline import WatsonLite
@@ -1013,7 +1015,9 @@ class TestPipelineCoverage:
         self.mock_scorer = MagicMock()
         self.mock_scorer_cls.return_value = self.mock_scorer
 
-        self.fetch_patcher = patch("watson_lite.pipeline.fetch_wikipedia_passages")
+        self.fetch_patcher = patch(
+            "watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages"
+        )
         self.mock_fetch = self.fetch_patcher.start()
 
         from watson_lite.pipeline import WatsonLite
@@ -1489,7 +1493,9 @@ class TestPipelineFailure:
         self.mock_scorer = MagicMock()
         self.mock_scorer_cls.return_value = self.mock_scorer
 
-        self.fetch_patcher = patch("watson_lite.pipeline.fetch_wikipedia_passages")
+        self.fetch_patcher = patch(
+            "watson_lite.retrieval.dataset_plugins.fetch_wikipedia_passages"
+        )
         self.mock_fetch = self.fetch_patcher.start()
 
         from watson_lite.pipeline import WatsonLite
