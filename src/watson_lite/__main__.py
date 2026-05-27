@@ -180,6 +180,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--extract-top-k", type=int, default=5)
     parser.add_argument("--max-retrieval-passes", type=int, default=2)
     parser.add_argument("--iterative-retrieval-threshold", type=float, default=0.3)
+    parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Minimum confidence required to return an answer; "
+            "below this the system returns \"I don't know\" (default: disabled)"
+        ),
+    )
     _add_benchmark_args(parser)
     parser.add_argument(
         "--device", type=int, default=-1, help="Torch device index (-1 = CPU, 0+ = GPU)"
@@ -217,6 +226,7 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "extraction_top_k": args.extract_top_k,
         "max_retrieval_passes": args.max_retrieval_passes,
         "iterative_retrieval_threshold": args.iterative_retrieval_threshold,
+        "confidence_threshold": args.confidence_threshold,
     }
     for name in (
         "vector_retrieval",

@@ -36,6 +36,7 @@ class FeatureConfig:
     extraction_top_k: int = 5
     max_retrieval_passes: int = 2
     iterative_retrieval_threshold: float = 0.3
+    confidence_threshold: float | None = None
 
     @classmethod
     def baseline(cls) -> FeatureConfig:
