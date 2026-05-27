@@ -16,6 +16,7 @@ class FeatureConfig:
     type_coercion: bool = True
     term_match: bool = True
     consistency: bool = True
+    entailment: bool = True
     answer_merging: bool = True
     multi_hypothesis: bool = True
     per_candidate_retrieval: bool = True
@@ -52,6 +53,7 @@ class FeatureConfig:
             type_coercion=False,
             term_match=False,
             consistency=False,
+            entailment=False,
             answer_merging=False,
             multi_hypothesis=False,
             per_candidate_retrieval=False,
@@ -73,6 +75,7 @@ OPTIONAL_FEATURES = (
     "type_coercion",
     "term_match",
     "consistency",
+    "entailment",
     "answer_merging",
     "multi_hypothesis",
     "per_candidate_retrieval",

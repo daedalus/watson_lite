@@ -68,6 +68,7 @@ def _add_feature_toggle_args(parser: argparse.ArgumentParser) -> None:
         ("--type-coercion", "Enable/disable type coercion signal"),
         ("--term-match", "Enable/disable IDF-weighted term match signal"),
         ("--consistency", "Enable/disable temporal/geospatial consistency checks"),
+        ("--entailment", "Enable/disable textual entailment confidence signal"),
         (
             "--answer-merging",
             "Enable/disable merging equivalent answers via Wikidata QID",
@@ -226,6 +227,7 @@ def _build_config(args: argparse.Namespace) -> FeatureConfig:
         "type_coercion",
         "term_match",
         "consistency",
+        "entailment",
         "answer_merging",
         "multi_hypothesis",
         "per_candidate_retrieval",

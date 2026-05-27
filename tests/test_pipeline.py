@@ -413,7 +413,9 @@ class TestWatsonLite:
         self.pipeline = WatsonLite(
             config=self.base_config.with_feature(
                 "question_type_bonus", False
-            ).with_feature("type_coercion", False)
+            )
+            .with_feature("type_coercion", False)
+            .with_feature("entailment", False)
         )
 
         self.pipeline.answer("test question", verbose=False)
@@ -424,6 +426,7 @@ class TestWatsonLite:
             is False
         )
         assert self.mock_scorer.score.call_args.kwargs["enable_type_coercion"] is False
+        assert self.mock_scorer.score.call_args.kwargs["enable_entailment"] is False
 
     def test_multi_hypothesis_adds_title_candidates(self) -> None:
         self._setup_success_flow()

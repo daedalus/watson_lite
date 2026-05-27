@@ -25,6 +25,7 @@ from watson_lite.scoring.consistency import (
     score_geospatial_consistency,
     score_temporal_consistency,
 )
+from watson_lite.scoring.entailment import score_entailment
 from watson_lite.scoring.term_match import score_term_match
 from watson_lite.scoring.type_coercion import resolve_span_to_qid, score_type_coercion
 
@@ -42,6 +43,7 @@ _DATE_WORD = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|"
     r"October|November|December|\d{1,2}\s+\w+|\w+\s+\d{4})\b"
 )
+_ENTAILMENT_TOP_CANDIDATES = 3
 
 
 def _question_type_bonus(span: str, question_type: str) -> float:
@@ -263,6 +265,28 @@ class ConfidenceScorer:
             else 0.0
         )
 
+    @staticmethod
+    def _compute_entailment_signal(
+        question: str,
+        best: AnswerCandidate,
+        candidates: list[AnswerCandidate],
+        enable_entailment: bool,
+    ) -> float:
+        if not enable_entailment:
+            return 0.0
+        top_passages = [
+            candidate.passage.strip()
+            for candidate in candidates[:_ENTAILMENT_TOP_CANDIDATES]
+            if candidate.passage.strip()
+        ]
+        if not top_passages:
+            return 0.0
+        return score_entailment(
+            question,
+            best.span,
+            top_passages,
+        )
+
     def _compute_all_signals(
         self,
         best: AnswerCandidate,
@@ -277,6 +301,7 @@ class ConfidenceScorer:
         enable_question_type_bonus: bool,
         enable_term_match: bool,
         enable_consistency: bool,
+        enable_entailment: bool,
         bidirectional_signal: float,
     ) -> dict[str, Any]:
         extraction_conf, agreement, rank_signal, frequency_signal = (
@@ -297,6 +322,9 @@ class ConfidenceScorer:
         term_match_signal = self._compute_term_match_signal(
             question, ranked_passages, enable_term_match
         )
+        entailment_signal = self._compute_entailment_signal(
+            question, best, candidates, enable_entailment
+        )
         temporal_signal, geo_signal = self._compute_consistency_signals(
             candidates, graph_results, enable_consistency
         )
@@ -311,6 +339,7 @@ class ConfidenceScorer:
             "type_signal": type_signal,
             "qt_bonus": qt_bonus,
             "term_match_signal": term_match_signal,
+            "entailment_signal": entailment_signal,
             "temporal_signal": temporal_signal,
             "geo_signal": geo_signal,
             "bidirectional_signal": bidirectional_signal,
@@ -334,6 +363,7 @@ class ConfidenceScorer:
                 + signals["qt_bonus"]
                 + 0.15 * signals["type_signal"]
                 + 0.10 * signals["term_match_signal"]
+                + 0.10 * signals["entailment_signal"]
                 + 0.05 * signals["temporal_signal"]
                 + 0.05 * signals["geo_signal"]
                 + 0.05 * signals["frequency_signal"]
@@ -373,6 +403,7 @@ class ConfidenceScorer:
                 "question_type_bonus": signals["qt_bonus"],
                 "type_coercion": signals["type_signal"],
                 "term_match": round(signals["term_match_signal"], 3),
+                "textual_entailment": round(signals["entailment_signal"], 3),
                 "temporal_consistency": signals["temporal_signal"],
                 "geospatial_consistency": signals["geo_signal"],
                 "frequency_signal": round(signals["frequency_signal"], 3),
@@ -394,6 +425,7 @@ class ConfidenceScorer:
         enable_type_coercion: bool = True,
         enable_term_match: bool = True,
         enable_consistency: bool = True,
+        enable_entailment: bool = True,
         enable_answer_merging: bool = True,
         bidirectional_signal: float = 0.0,
     ) -> FinalAnswer:
@@ -424,6 +456,7 @@ class ConfidenceScorer:
             enable_question_type_bonus,
             enable_term_match,
             enable_consistency,
+            enable_entailment,
             bidirectional_signal,
         )
         confidence = self._compute_final_confidence(
