@@ -106,59 +106,56 @@ LAT_QID_MAP: dict[str, list[str]] = {
 }
 
 
-def _extract_lat(text: str, question_type: str) -> tuple[str | None, list[str]]:
-    """Extract Lexical Answer Type from the question using simple heuristics.
+def _extract_lat(doc: Doc, question_type: str = "") -> tuple[str | None, list[str]]:
+    """Extract Lexical Answer Type using spaCy structural analysis.
 
     Returns (lat_headword, list_of_expected_qids). Returns (None, []) when no
     LAT can be inferred.
     """
-    lower = text.lower().strip()
-
-    if question_type == "who":
-        return "person", LAT_QID_MAP["person"]
-
-    if question_type == "where":
-        return "location", LAT_QID_MAP.get("city", [])
-
-    if question_type == "when":
+    tokens = [t for t in doc if not t.is_punct]
+    if not tokens:
         return None, []
 
-    if question_type == "why":
-        return None, []
+    first = tokens[0]
 
-    if question_type in ("what", "unknown"):
-        first_word = lower.split()[0] if lower.split() else ""
-        rest = " ".join(lower.split()[1:]) if len(lower.split()) > 1 else ""
+    # PRON + nsubj with VERB root → agent/person question (universal)
+    if first.pos_ == "PRON":
+        pron_type = first.morph.get("PronType")
+        is_interrogative = not pron_type or bool(set(pron_type) & {"Int", "Rel", "Ind"})
+        if is_interrogative and first.dep_ in {
+            "nsubj",
+            "csubj",
+            "nsubjpass",
+            "nsubj:pass",
+        }:
+            root = next((t for t in doc if t.dep_ == "ROOT"), None)
+            if root is not None and root.pos_ == "VERB":
+                return "person", LAT_QID_MAP.get("person", [])
 
-        if first_word in ("what", "which") and rest:
-            skip_words = {
-                "is",
-                "are",
-                "was",
-                "were",
-                "do",
-                "does",
-                "did",
-                "has",
-                "have",
-                "had",
-                "can",
-                "could",
-                "will",
-                "would",
-                "shall",
-                "should",
-                "may",
-                "might",
-                "the",
-                "a",
-                "an",
-            }
-            head = rest.split()[0] if rest.split() else ""
-            if head and head not in skip_words:
-                qids = LAT_QID_MAP.get(head)
-                if qids:
-                    return head, qids
+    # Scan for first content noun after the question word
+    skip_pos = {
+        "AUX",
+        "DET",
+        "ADP",
+        "PRON",
+        "SCONJ",
+        "PART",
+        "CCONJ",
+        "INTJ",
+        "NUM",
+        "ADV",
+        "VERB",
+        "ADJ",
+    }
+    for token in tokens[1:]:
+        if token.pos_ in {"NOUN", "PROPN"}:
+            lemma = token.lemma_.lower()
+            qids = LAT_QID_MAP.get(lemma, [])
+            return lemma, qids
+        if token.pos_ not in skip_pos:
+            lemma = token.lemma_.lower()
+            qids = LAT_QID_MAP.get(lemma, [])
+            return lemma, qids
 
     return None, []
 
@@ -371,7 +368,7 @@ class NLPProcessor:
         normalized = _ner_input(question, self.nlp)
         doc = self.nlp(normalized)
         question_type = self.classify_question(question)
-        lat, lat_qids = _extract_lat(question, question_type)
+        lat, lat_qids = _extract_lat(doc, question_type)
         semantic_enabled = semantic_nlp or self.semantic_nlp
         srl_frames = _extract_srl_frames(doc) if semantic_enabled else []
         coref_clusters = self._resolve_coreference(doc) if semantic_enabled else []

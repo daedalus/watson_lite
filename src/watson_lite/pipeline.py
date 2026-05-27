@@ -40,8 +40,10 @@ _NON_WORD = re.compile(r"\W+")
 
 _ENGLISH_EMBED_MODEL = "all-MiniLM-L6-v2"
 _ENGLISH_CE_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+_ENGLISH_NLI_MODEL = "cross-encoder/nli-deberta-v3-small"
 _MULTILINGUAL_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 _MULTILINGUAL_CE_MODEL = "cross-encoder/stsb-distilroberta-base"
+_MULTILINGUAL_NLI_MODEL = "MoritzLaurer/mDeBERTa-v3-base-xnli-mnli"
 
 
 def _passage_content_key(p: Passage) -> str:
@@ -84,6 +86,7 @@ class WatsonLite:
         self._ranker_cache: dict[str, Ranker] = {}
         self._current_embed_model: str = _MULTILINGUAL_EMBED_MODEL
         self._current_ce_model: str = _MULTILINGUAL_CE_MODEL
+        self._current_nli_model: str = _ENGLISH_NLI_MODEL
         self._load_prebuilt_index()
         logger.info("Core components loaded. Heavy models will load lazily.")
 
@@ -111,7 +114,7 @@ class WatsonLite:
         self._index_loaded = True
 
     def _select_models_for_language(self, language: str) -> None:
-        """Set embedding and cross-encoder models based on detected language."""
+        """Set embedding, cross-encoder, and NLI models based on detected language."""
         if self.config.embed_model is None:
             self._current_embed_model = (
                 _ENGLISH_EMBED_MODEL if language == "en" else _MULTILINGUAL_EMBED_MODEL
@@ -120,6 +123,12 @@ class WatsonLite:
             self._current_ce_model = (
                 _ENGLISH_CE_MODEL if language == "en" else _MULTILINGUAL_CE_MODEL
             )
+        if self.config.nli_model is None:
+            self._current_nli_model = (
+                _ENGLISH_NLI_MODEL if language == "en" else _MULTILINGUAL_NLI_MODEL
+            )
+        else:
+            self._current_nli_model = self.config.nli_model
 
     def _get_nlp(self, language: str = "en") -> NLPProcessor:
         if language not in self._nlp_cache:
@@ -544,6 +553,8 @@ class WatsonLite:
                 top_k=3,
             )
             stage_latencies["double_check"] = round(time.perf_counter() - stage_t0, 4)
+
+        configure_entailment_model(self._current_nli_model)
 
         self._log_step(verbose, 6, "Confidence scoring...")
         stage_t0 = time.perf_counter()

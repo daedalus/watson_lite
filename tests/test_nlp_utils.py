@@ -1,52 +1,106 @@
-"""Tests for pure-Python NLP utility functions that do not require spaCy models."""
+"""Tests for NLP utility functions that extract lexical answer types."""
+
+import pytest
 
 from watson_lite.core.nlp import _extract_lat
 
 
+@pytest.fixture(scope="module")
+def nlp():
+    import spacy
+
+    return spacy.load("en_core_web_sm")
+
+
 class TestExtractLat:
-    def test_who_returns_person(self) -> None:
-        lat, qids = _extract_lat("Who invented the telephone?", "who")
+    def test_who_returns_person(self, nlp) -> None:
+        doc = nlp("Who invented the telephone?")
+        lat, qids = _extract_lat(doc)
         assert lat == "person"
         assert "Q5" in qids
 
-    def test_where_returns_location(self) -> None:
-        lat, qids = _extract_lat("Where is the Eiffel Tower?", "where")
-        assert lat == "location"
-        assert qids  # should have city QIDs
-
-    def test_when_returns_none(self) -> None:
-        lat, qids = _extract_lat("When was Shakespeare born?", "when")
-        assert lat is None
+    def test_where_extracts_proper_noun(self, nlp) -> None:
+        doc = nlp("Where is the Eiffel Tower?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "eiffel"
         assert qids == []
 
-    def test_why_returns_none(self) -> None:
-        lat, qids = _extract_lat("Why did Rome fall?", "why")
-        assert lat is None
+    def test_when_extracts_entity(self, nlp) -> None:
+        doc = nlp("When was Shakespeare born?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "shakespeare"
         assert qids == []
 
-    def test_what_known_noun_returns_lat(self) -> None:
-        lat, qids = _extract_lat("What country is France?", "what")
+    def test_why_extracts_entity(self, nlp) -> None:
+        doc = nlp("Why did Rome fall?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "rome"
+        assert qids == []
+
+    def test_what_known_noun_returns_lat(self, nlp) -> None:
+        doc = nlp("What country is France?")
+        lat, qids = _extract_lat(doc)
         assert lat == "country"
-        assert qids  # should contain Q6256
+        assert "Q6256" in qids
 
-    def test_what_skip_word_returns_none(self) -> None:
-        # "is" is in skip_words so LAT lookup should fail
-        lat, qids = _extract_lat("What is the capital of France?", "what")
-        assert lat is None
+    def test_what_skip_word_finds_head(self, nlp) -> None:
+        doc = nlp("What is the capital of France?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "capital"
         assert qids == []
 
-    def test_what_unknown_noun_not_in_map(self) -> None:
-        # "thing" is not in LAT_QID_MAP
-        lat, qids = _extract_lat("What thing happened?", "what")
-        assert lat is None
+    def test_what_unknown_noun_returns_headword(self, nlp) -> None:
+        doc = nlp("What thing happened?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "thing"
         assert qids == []
 
-    def test_which_known_noun(self) -> None:
-        lat, qids = _extract_lat("Which planet is the largest?", "what")
+    def test_which_known_noun(self, nlp) -> None:
+        doc = nlp("Which planet is the largest?")
+        lat, qids = _extract_lat(doc)
         assert lat == "planet"
-        assert qids  # should contain Q634
+        assert qids
 
-    def test_unknown_question_type(self) -> None:
-        lat, qids = _extract_lat("How tall is the tower?", "how")
-        assert lat is None
+    def test_unknown_question_type(self, nlp) -> None:
+        doc = nlp("How tall is the tower?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "tower"
+        assert qids == []
+
+
+class TestExtractLatSpanish:
+    def test_quien_returns_person(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Quién diseñó la Torre Eiffel?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "person"
+        assert "Q5" in qids
+
+    def test_que_finds_noun(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Qué ciudad es la capital de Francia?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "ciudad"
+        assert qids == []
+
+    def test_donde(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Dónde está París?")
+        lat, qids = _extract_lat(doc)
+        assert lat == "parís"
         assert qids == []

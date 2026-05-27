@@ -315,7 +315,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--nli-model",
         type=str,
         default=None,
-        help="NLI model for textual entailment (default: cross-encoder/nli-deberta-v3-small)",
+        help="NLI model for textual entailment (default: auto-selected per language)",
     )
     parser.add_argument(
         "--device", type=int, default=-1, help="Torch device index (-1 = CPU, 0+ = GPU)"
