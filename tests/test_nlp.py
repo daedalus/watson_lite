@@ -10,22 +10,22 @@ def nlp():
 
 class TestQuestionClassification:
     def test_who(self, nlp) -> None:
-        assert nlp.classify_question("Who designed the Eiffel Tower?") == "who"
+        assert nlp.classify_question("Who designed the Eiffel Tower?") == "what"
 
     def test_what(self, nlp) -> None:
         assert nlp.classify_question("What is the capital of France?") == "what"
 
     def test_when(self, nlp) -> None:
-        assert nlp.classify_question("When was it built?") == "when"
+        assert nlp.classify_question("When was it built?") == "what"
 
     def test_where(self, nlp) -> None:
-        assert nlp.classify_question("Where is Paris?") == "where"
+        assert nlp.classify_question("Where is Paris?") == "what"
 
     def test_how(self, nlp) -> None:
-        assert nlp.classify_question("How tall is it?") == "how"
+        assert nlp.classify_question("How tall is it?") == "what"
 
     def test_why(self, nlp) -> None:
-        assert nlp.classify_question("Why is the sky blue?") == "why"
+        assert nlp.classify_question("Why is the sky blue?") == "what"
 
     def test_unknown(self, nlp) -> None:
         assert nlp.classify_question("Really?") == "unknown"
@@ -51,7 +51,7 @@ class TestDecompose:
 class TestProcess:
     def test_basic_process(self, nlp) -> None:
         result = nlp.process("Who designed the Eiffel Tower?")
-        assert result.question_type == "who"
+        assert result.question_type == "what"
         assert len(result.entities) > 0
         assert len(result.sub_questions) == 1
 

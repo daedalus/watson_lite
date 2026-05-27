@@ -1183,7 +1183,7 @@ class TestNLPFuzzing:
 
         nlp = NLPProcessor()
         parsed = nlp.process("Who built 塔?")
-        assert parsed.question_type == "who"
+        assert parsed.question_type == "what"
         assert len(parsed.entities) >= 0
 
     def test_classify_question_numbers_only(self) -> None:

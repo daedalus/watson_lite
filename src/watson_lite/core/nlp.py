@@ -237,12 +237,20 @@ class NLPProcessor:
             self._has_coreferee = True
 
     def classify_question(self, text: str) -> str:
-        if self.language != "en":
+        doc = self.nlp(text)
+        for token in doc:
+            if token.is_punct:
+                continue
+            if token.pos_ == "PRON":
+                pron_type = token.morph.get("PronType")
+                if (
+                    not pron_type or bool(set(pron_type) & {"Int", "Rel", "Ind"})
+                ) and token.dep_ != "expl":
+                    return "what"
+                return "unknown"
+            if token.pos_ == "SCONJ" and token.dep_ == "advmod":
+                return "what"
             return "unknown"
-        first = text.strip().lower().split()[0] if text.strip() else ""
-        for qtype, triggers in QUESTION_TYPES.items():
-            if first in triggers:
-                return qtype
         return "unknown"
 
     def extract_entities(self, doc: Doc) -> list[dict[str, str | int]]:

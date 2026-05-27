@@ -229,25 +229,21 @@ class TestE2EPipeline:
 
         assert keys_one != keys_two
 
-    def test_question_type_who_bonus_applied(self, patched_pipeline) -> None:
-        """'Who' question with a multi-word capitalized answer gets a QT bonus.
-
-        The type-coercion signal is stubbed to a positive value so that the
-        "type-coercion confirms match" path is exercised and the form-based
-        QT bonus is not suppressed by the type-coercion guard.
-        """
+    def test_question_type_bonus_not_applied_for_generic_type(
+        self, patched_pipeline
+    ) -> None:
+        """No QT bonus for any question type since all are 'what'."""
         watson, _, mock_qa = patched_pipeline
         mock_qa.return_value = {"answer": "Gustave Eiffel", "score": 0.85}
         with patch("watson_lite.core.extractor.score_type_coercion", return_value=0.1):
             result = watson.answer("Who designed the Eiffel Tower?", verbose=False)
-        assert result.confidence_breakdown.get("question_type_bonus", 0) == 0.1
+        assert result.confidence_breakdown.get("question_type_bonus", 0) == 0.0
 
-    def test_question_type_when_bonus_applied(self, patched_pipeline) -> None:
-        """'When' question with a year answer gets a QT bonus."""
+    def test_question_type_bonus_not_applied_for_when(self, patched_pipeline) -> None:
         watson, _, mock_qa = patched_pipeline
         mock_qa.return_value = {"answer": "1889", "score": 0.85}
         result = watson.answer("When was the Eiffel Tower built?", verbose=False)
-        assert result.confidence_breakdown.get("question_type_bonus", 0) == 0.1
+        assert result.confidence_breakdown.get("question_type_bonus", 0) == 0.0
 
     def test_empty_question_raises(self, patched_pipeline) -> None:
         watson, _, _ = patched_pipeline
