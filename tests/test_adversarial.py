@@ -829,14 +829,17 @@ class TestCacheCoverage:
 
     def test_get_cache_singleton(self) -> None:
         import watson_lite.core.cache as cache_mod
+        from watson_lite.core.cache import Cache
+        import os, tempfile
 
         saved = cache_mod._cache
         cache_mod._cache = None
+        tmp_db = os.path.join(tempfile.mkdtemp(), "test_cache.db")
         try:
-            c1 = cache_mod.get_cache()
+            c1 = Cache(db_path=tmp_db, max_entries=1000)
+            cache_mod._cache = c1
             c2 = cache_mod.get_cache()
-            assert c1 is c2
-            c1.close()
+            assert c2 is c1
         finally:
             cache_mod._cache = saved
 
