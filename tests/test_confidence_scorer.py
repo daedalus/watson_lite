@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from watson_lite.core.extractor import ConfidenceScorer, _question_type_bonus
+from watson_lite.core.extractor import ConfidenceScorer, _question_word_bonus
 from watson_lite.core.models import AnswerCandidate, EntityFact, GraphResult
 
 
@@ -424,23 +424,23 @@ class TestConfidenceScorer:
 
 
 class TestQuestionTypeBonus:
-    def test_who_multi_word_capitalized(self) -> None:
-        assert _question_type_bonus("Gustave Eiffel", "who") == 0.1
+    def test_person_multi_word_capitalized(self) -> None:
+        assert _question_word_bonus("Gustave Eiffel", "person") == 0.1
 
-    def test_who_single_word(self) -> None:
-        assert _question_type_bonus("Paris", "who") == 0.0
+    def test_person_single_word(self) -> None:
+        assert _question_word_bonus("Paris", "person") == 0.0
 
-    def test_when_year(self) -> None:
-        assert _question_type_bonus("1889", "when") == 0.1
+    def test_time_year(self) -> None:
+        assert _question_word_bonus("1889", "time") == 0.1
 
-    def test_when_month_year(self) -> None:
-        assert _question_type_bonus("March 1889", "when") == 0.1
+    def test_time_month_year(self) -> None:
+        assert _question_word_bonus("March 1889", "time") == 0.1
 
-    def test_when_no_date(self) -> None:
-        assert _question_type_bonus("Gustave Eiffel", "when") == 0.0
+    def test_time_no_date(self) -> None:
+        assert _question_word_bonus("Gustave Eiffel", "time") == 0.0
 
     def test_where_returns_zero(self) -> None:
-        assert _question_type_bonus("Paris", "where") == 0.0
+        assert _question_word_bonus("Paris", None) == 0.0
 
     def test_unknown_type(self) -> None:
-        assert _question_type_bonus("anything", "unknown") == 0.0
+        assert _question_word_bonus("anything", None) == 0.0

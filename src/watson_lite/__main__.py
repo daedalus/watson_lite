@@ -395,6 +395,7 @@ def _print_text_answer(answer: FinalAnswer, *, show_diagnostics: bool) -> None:
     print("=" * 50)
     print(f"  ANSWER:     {answer.answer}")
     print(f"  CONFIDENCE: {answer.confidence * 100:.1f}%")
+    print(f"  LANGUAGE:   {answer.detected_language or 'en'}")
     print(f"  SOURCE:     {answer.source}")
     print(f"  URL:        {answer.url}")
     if answer.graph_facts:

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from watson_lite.core.cache import SENTINEL, Cache, is_cache_miss
-from watson_lite.core.extractor import ConfidenceScorer, _question_type_bonus
+from watson_lite.core.extractor import ConfidenceScorer, _question_word_bonus
 from watson_lite.core.models import (
     AnswerCandidate,
     EntityFact,
@@ -558,12 +558,12 @@ class TestConfidenceScorerAdversarial:
         assert answer.confidence_breakdown["graph_corroboration"] == 0.2
 
     def test_question_type_bonus_when_no_match(self) -> None:
-        assert _question_type_bonus("foo", "how") == 0.0
-        assert _question_type_bonus("bar", "why") == 0.0
-        assert _question_type_bonus("", "who") == 0.0
+        assert _question_word_bonus("foo", None) == 0.0
+        assert _question_word_bonus("bar", None) == 0.0
+        assert _question_word_bonus("", "person") == 0.0
 
     def test_question_type_bonus_who_single_word(self) -> None:
-        assert _question_type_bonus("Paris", "who") == 0.0
+        assert _question_word_bonus("Paris", "person") == 0.0
 
     def test_confidence_clamped_at_1(self) -> None:
         scorer = ConfidenceScorer()
@@ -782,25 +782,25 @@ class TestPipelineAdversarial:
 
 
 # ---------------------------------------------------------------------------
-# _question_type_bonus — standalone edge cases
+# _question_word_bonus — standalone edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestQuestionTypeBonus:
-    def test_when_with_year_pattern(self) -> None:
-        assert _question_type_bonus("1889", "when") == 0.1
-        assert _question_type_bonus("in 1889", "when") == 0.1
-        assert _question_type_bonus("999", "when") == 0.0
-        assert _question_type_bonus("3000", "when") == 0.0
+class TestQuestionWordBonus:
+    def test_time_with_year_pattern(self) -> None:
+        assert _question_word_bonus("1889", "time") == 0.1
+        assert _question_word_bonus("in 1889", "time") == 0.1
+        assert _question_word_bonus("999", "time") == 0.0
+        assert _question_word_bonus("3000", "time") == 0.0
 
-    def test_when_with_date_word(self) -> None:
-        assert _question_type_bonus("January", "when") == 0.1
-        assert _question_type_bonus("March 5", "when") == 0.1
-        assert _question_type_bonus("15 August 2023", "when") == 0.1
+    def test_time_with_date_word(self) -> None:
+        assert _question_word_bonus("January", "time") == 0.1
+        assert _question_word_bonus("March 5", "time") == 0.1
+        assert _question_word_bonus("15 August 2023", "time") == 0.1
 
-    def test_when_no_match(self) -> None:
-        assert _question_type_bonus("Paris", "when") == 0.0
-        assert _question_type_bonus("", "when") == 0.0
+    def test_time_no_match(self) -> None:
+        assert _question_word_bonus("Paris", "time") == 0.0
+        assert _question_word_bonus("", "time") == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -1592,6 +1592,8 @@ class TestE2EFailures:
         wl._nlp_cache = {"en": wl.nlp}
         wl._vector_cache = {}
         wl._ranker_cache = {}
+        wl._reader_cache = {}
+        wl._current_extractive_model = "deepset/roberta-base-squad2"
         wl._current_embed_model = "all-MiniLM-L6-v2"
         wl._current_ce_model = "cross-encoder/ms-marco-MiniLM-L6-v2"
         wl.logger = MagicMock()

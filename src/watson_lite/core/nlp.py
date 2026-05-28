@@ -19,7 +19,7 @@ else:  # pragma: no cover - runtime fallback used when type checking is inactive
 logger = logging.getLogger(__name__)
 
 
-def _ner_input(text: str, nlp: Any) -> str:
+def _ner_input(text: str, nlp: Any, language: str = "en") -> str:
     """Build a version of *text* that triggers better NER.
 
     spaCy's NER uses casing as a strong signal.  Lowercased proper nouns
@@ -28,31 +28,19 @@ def _ner_input(text: str, nlp: Any) -> str:
     picked up.
 
     This function runs a lightweight first pass to get POS tags, then
-    capitalises content words (NOUN, PROPN, ADJ, ADV) so the subsequent
-    full pipeline pass detects entities that would otherwise be missed.
+    capitalises content words (NOUN, PROPN, ADJ, ADV for English) so the
+    subsequent full pipeline pass detects entities that would otherwise
+    be missed.  For non-English languages only NOUN and PROPN are
+    capitalised to avoid false entities from mis-tagged tokens.
     Function words (VERB, AUX, DET, …) are left in their original casing
     to avoid destabilising the dependency parse.
     """
-    with nlp.select_pipes(enable=["tok2vec", "tagger", "attribute_ruler"]):
+    tagger_pipe = "tagger" if nlp.has_pipe("tagger") else "morphologizer"
+    with nlp.select_pipes(enable=["tok2vec", tagger_pipe, "attribute_ruler"]):
         doc = nlp(text)
-    skip = {
-        "VERB",
-        "AUX",
-        "DET",
-        "ADP",
-        "PRON",
-        "SCONJ",
-        "CCONJ",
-        "PART",
-        "INTJ",
-        "PUNCT",
-        "SPACE",
-        "X",
-        "NUM",
-        "SYM",
-    }
+    capitalise = {"NOUN", "PROPN", "ADJ", "ADV"} if language == "en" else {"NOUN", "PROPN"}
     parts = [
-        t.text.capitalize() if t.pos_ not in skip and t.text.islower() else t.text
+        t.text.capitalize() if t.pos_ in capitalise and t.text.islower() else t.text
         for t in doc
     ]
     return " ".join(parts)
@@ -129,6 +117,55 @@ def _detect_question_word(doc: Doc) -> str | None:
                     return f"{token.text.lower()} {token.head.text.lower()}"
             return None
         return None
+    return None
+
+
+def _classify_question_word(doc: Doc, question_word: str | None) -> str | None:
+    """Classify question word type from spaCy POS + morph features.
+
+    Returns ``"person"`` for nominal interrogatives (who, what, which,
+    quién, qué, cuál), ``"time"`` for adverbial interrogatives (when,
+    where, why, how, cuándo, dónde), or ``None`` otherwise.
+    """
+    if question_word is None:
+        return None
+
+    def _match_tokens() -> int:
+        qw_parts = question_word.lower().strip().split()
+        for i, token in enumerate(doc):
+            if token.is_punct:
+                continue
+            if not token.text.lower().startswith(qw_parts[0]):
+                continue
+            ok = True
+            for j, part in enumerate(qw_parts):
+                if (
+                    i + j >= len(doc)
+                    or doc[i + j].is_punct
+                    or doc[i + j].text.lower() != part
+                ):
+                    ok = False
+                    break
+            if ok:
+                return i + len(qw_parts) - 1
+        return -1
+
+    idx = _match_tokens()
+    if idx < 0:
+        return None
+
+    target = doc[idx]
+    pron_type = target.morph.get("PronType")
+    if target.pos_ == "PRON":
+        if pron_type and ("Int" in pron_type or "Rel" in pron_type):
+            return "person"
+        if pron_type and "Ind" in pron_type:
+            return "time"
+        return "person"
+    if target.pos_ in ("ADV", "SCONJ"):
+        return "time"
+    if target.pos_ == "DET":
+        return "person"
     return None
 
 
@@ -400,11 +437,12 @@ class NLPProcessor:
         return clusters
 
     def process(self, question: str, semantic_nlp: bool = False) -> ParsedQuestion:
-        normalized = _ner_input(question, self.nlp)
+        normalized = _ner_input(question, self.nlp, language=self.language)
         doc = self.nlp(normalized)
         question_type = self.classify_question(question)
         lat, lat_qids = _extract_lat(doc, question_type)
         question_word = _detect_question_word(doc)
+        question_word_type = _classify_question_word(doc, question_word)
         semantic_enabled = semantic_nlp or self.semantic_nlp
         srl_frames = _extract_srl_frames(doc) if semantic_enabled else []
         coref_clusters = self._resolve_coreference(doc) if semantic_enabled else []
@@ -412,6 +450,7 @@ class NLPProcessor:
             raw=question,
             question_type=question_type,
             question_word=question_word,
+            question_word_type=question_word_type,
             entities=self.extract_entities(doc),
             noun_chunks=[chunk.text for chunk in doc.noun_chunks],
             root_verb=self.get_root_verb(doc),

@@ -46,11 +46,16 @@ _DATE_WORD = re.compile(
 _ENTAILMENT_TOP_CANDIDATES = 3
 
 
-def _question_type_bonus(span: str, question_type: str) -> float:
-    """Return a small bonus in [0, 0.1] when the span form matches the question type."""
-    if question_type == "who" and _MULTI_WORD_CAP.search(span):
+def _question_word_bonus(span: str, question_word_type: str | None) -> float:
+    """Return a small bonus in [0, 0.1] when the span matches the question word type.
+
+    ``question_word_type`` is derived from spaCy POS/morph features
+    (``"person"`` for interrogative PRONs, ``"time"`` for interrogative
+    ADV/SCONJ).
+    """
+    if question_word_type == "person" and _MULTI_WORD_CAP.search(span):
         return 0.1
-    if question_type == "when" and (_YEAR.search(span) or _DATE_WORD.search(span)):
+    if question_word_type == "time" and (_YEAR.search(span) or _DATE_WORD.search(span)):
         return 0.1
     return 0.0
 
@@ -212,7 +217,7 @@ class ConfidenceScorer:
         enable_type_coercion: bool,
         enable_answer_merging: bool,
         enable_question_type_bonus: bool,
-        question_type: str,
+        question_word_type: str | None,
     ) -> tuple[str | None, float, float]:
         best_qid = (
             resolve_span_to_qid(best.span)
@@ -225,7 +230,7 @@ class ConfidenceScorer:
             else 0.0
         )
         qt_bonus = (
-            _question_type_bonus(best.span, question_type)
+            _question_word_bonus(best.span, question_word_type)
             if enable_question_type_bonus
             else 0.0
         )
@@ -295,7 +300,7 @@ class ConfidenceScorer:
         best: AnswerCandidate,
         candidates: list[AnswerCandidate],
         graph_results: list[GraphResult],
-        question_type: str,
+        question_word_type: str | None,
         lat_qids: list[str],
         question: str,
         ranked_passages: list[RankedPassage] | None,
@@ -320,7 +325,7 @@ class ConfidenceScorer:
             enable_type_coercion,
             enable_answer_merging,
             enable_question_type_bonus,
-            question_type,
+            question_word_type,
         )
         term_match_signal = self._compute_term_match_signal(
             question, ranked_passages, enable_term_match
@@ -419,7 +424,7 @@ class ConfidenceScorer:
         self,
         candidates: list[AnswerCandidate],
         graph_results: list[GraphResult],
-        question_type: str,
+        question_word_type: str | None = None,
         lat_qids: list[str] | None = None,
         *,
         question: str = "",
@@ -449,7 +454,7 @@ class ConfidenceScorer:
             best,
             candidates,
             graph_results,
-            question_type,
+            question_word_type,
             lat_qids or [],
             question,
             ranked_passages,

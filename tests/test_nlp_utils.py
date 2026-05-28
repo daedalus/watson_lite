@@ -2,7 +2,11 @@
 
 import pytest
 
-from watson_lite.core.nlp import _detect_question_word, _extract_lat
+from watson_lite.core.nlp import (
+    _classify_question_word,
+    _detect_question_word,
+    _extract_lat,
+)
 
 
 @pytest.fixture(scope="module")
@@ -158,3 +162,57 @@ class TestDetectQuestionWord:
             pytest.skip("es_core_news_sm not installed")
         doc = es("¿Por qué cayó el Imperio Romano?")
         assert _detect_question_word(doc) == "por qué"
+
+
+class TestClassifyQuestionWord:
+    def test_person_who(self, nlp) -> None:
+        doc = nlp("Who built the Eiffel Tower?")
+        assert _classify_question_word(doc, "who") == "person"
+
+    def test_person_whom(self, nlp) -> None:
+        doc = nlp("Whom did you meet?")
+        assert _classify_question_word(doc, "whom") == "person"
+
+    def test_person_whose(self, nlp) -> None:
+        doc = nlp("Whose book is this?")
+        assert _classify_question_word(doc, "whose") == "person"
+
+    def test_time_when(self, nlp) -> None:
+        doc = nlp("When was the Eiffel Tower built?")
+        assert _classify_question_word(doc, "when") == "time"
+
+    def test_time_cuando(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Cuándo se construyó la Torre Eiffel?")
+        assert _classify_question_word(doc, "cuándo") == "time"
+
+    def test_person_quien(self, nlp) -> None:
+        import spacy
+
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        doc = es("¿Quién construyó la Torre Eiffel?")
+        assert _classify_question_word(doc, "quién") == "person"
+
+    def test_none_returns_none(self, nlp) -> None:
+        doc = nlp("Hello world")
+        assert _classify_question_word(doc, None) is None
+
+    def test_no_match_returns_none(self, nlp) -> None:
+        doc = nlp("Hello world")
+        assert _classify_question_word(doc, "who") is None
+
+    def test_what_returns_person(self, nlp) -> None:
+        doc = nlp("What is the capital of France?")
+        assert _classify_question_word(doc, "what") == "person"
+
+    def test_where_returns_time(self, nlp) -> None:
+        doc = nlp("Where is Paris?")
+        assert _classify_question_word(doc, "where") == "time"

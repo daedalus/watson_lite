@@ -44,6 +44,8 @@ _ENGLISH_NLI_MODEL = "cross-encoder/nli-deberta-v3-small"
 _MULTILINGUAL_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 _MULTILINGUAL_CE_MODEL = "cross-encoder/stsb-distilroberta-base"
 _MULTILINGUAL_NLI_MODEL = "MoritzLaurer/mDeBERTa-v3-base-xnli-mnli"
+_ENGLISH_EXTRACTIVE_MODEL = "deepset/roberta-base-squad2"
+_MULTILINGUAL_EXTRACTIVE_MODEL = "deepset/xlm-roberta-base-squad2"
 
 
 def _passage_content_key(p: Passage) -> str:
@@ -84,9 +86,11 @@ class WatsonLite:
         self._nlp_cache: dict[str, NLPProcessor] = {}
         self._vector_cache: dict[str, VectorRetriever] = {}
         self._ranker_cache: dict[str, Ranker] = {}
+        self._reader_cache: dict[str, ExtractiveReader] = {}
         self._current_embed_model: str = _MULTILINGUAL_EMBED_MODEL
         self._current_ce_model: str = _MULTILINGUAL_CE_MODEL
         self._current_nli_model: str = _ENGLISH_NLI_MODEL
+        self._current_extractive_model: str = _ENGLISH_EXTRACTIVE_MODEL
         self._load_prebuilt_index()
         logger.info("Core components loaded. Heavy models will load lazily.")
 
@@ -129,6 +133,9 @@ class WatsonLite:
             )
         else:
             self._current_nli_model = self.config.nli_model
+        self._current_extractive_model = (
+            _ENGLISH_EXTRACTIVE_MODEL if language == "en" else _MULTILINGUAL_EXTRACTIVE_MODEL
+        )
 
     def _get_nlp(self, language: str = "en") -> NLPProcessor:
         if language not in self._nlp_cache:
@@ -164,9 +171,14 @@ class WatsonLite:
         return self.ranker
 
     def _get_reader(self) -> ExtractiveReader:
-        if self.reader is None:
-            self.reader = ExtractiveReader(device=self.device)
-        return self.reader
+        if self.reader is not None:
+            return self.reader
+        model = self._current_extractive_model
+        if model not in self._reader_cache:
+            self._reader_cache[model] = ExtractiveReader(
+                model_name=model, device=self.device
+            )
+        return self._reader_cache[model]
 
     def _retrieve_parallel(  # pylint: disable=too-many-arguments
         self,
@@ -445,7 +457,7 @@ class WatsonLite:
         return self.scorer.score(
             candidates,
             graph_results,
-            parsed.question_type,
+            parsed.question_word_type,
             lat_qids=parsed.lat_qids,
             question=question,
             ranked_passages=ranked,
@@ -491,7 +503,9 @@ class WatsonLite:
             question, parsed, entity_names, stage_t0, verbose
         )
         if retrieval_result is None:
-            return self._build_empty_answer(t0, stage_latencies, cache_before)
+            empty = self._build_empty_answer(t0, stage_latencies, cache_before)
+            empty.detected_language = language
+            return empty
 
         (
             passages_fetched,
@@ -605,6 +619,7 @@ class WatsonLite:
             cache_misses_by_namespace=misses_by_ns,
             top_retrieved_passages=[rp.passage.text for rp in final_ranked[:10]],
         )
+        answer.detected_language = language
 
         if verbose:
             self._print_answer(answer, total_latency)
@@ -804,6 +819,7 @@ class WatsonLite:
         logger.info("=" * 50)
         logger.info("  ANSWER:     %s", answer.answer)
         logger.info("  CONFIDENCE: %.1f%%", answer.confidence * 100)
+        logger.info("  LANGUAGE:   %s", answer.detected_language or "en")
         logger.info("  SOURCE:     %s", answer.source)
         logger.info("  URL:        %s", answer.url)
         if answer.graph_facts:

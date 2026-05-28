@@ -67,6 +67,7 @@ class FinalAnswer:
     supporting_passages: list[str] = field(default_factory=list)
     graph_facts: list[str] = field(default_factory=list)
     confidence_breakdown: dict[str, float | str] = field(default_factory=dict)
+    detected_language: str | None = None
     diagnostics: AnswerDiagnostics | None = None
     evidence_chain: list[EvidenceItem] = field(default_factory=list)
 
@@ -99,5 +100,6 @@ class ParsedQuestion:
     lat: str | None = None
     lat_qids: list[str] = field(default_factory=list)
     question_word: str | None = None
+    question_word_type: str | None = None
     srl_frames: list[dict[str, str]] = field(default_factory=list)
     coref_clusters: list[list[str]] = field(default_factory=list)
