@@ -37,6 +37,59 @@ class TestQuestionClassification:
     def test_empty(self, nlp) -> None:
         assert nlp.classify_question("") == "unknown"
 
+    def test_expletive_pronoun(self, nlp) -> None:
+        assert nlp.classify_question("There is a book") == "unknown"
+
+    def test_adp_non_interrogative(self, nlp) -> None:
+        assert nlp.classify_question("Go to school") == "unknown"
+
+
+class TestExtractEntities:
+    def test_filters_entity_with_verb(self, nlp) -> None:
+        import spacy
+        doc = nlp.nlp("Who built the Eiffel Tower?")
+        ents = nlp.extract_entities(doc)
+        for ent in ents:
+            assert "built" not in ent["text"].lower()
+
+    def test_spanish_entity_without_verb(self) -> None:
+        import spacy
+        try:
+            es = spacy.load("es_core_news_sm")
+        except OSError:
+            pytest.skip("es_core_news_sm not installed")
+        nlp_es = NLPProcessor(language="es")
+        text = "¿Qué ciudad es la capital de Francia?"
+        from watson_lite.core.nlp import _ner_input
+        normalized = _ner_input(text, es, language="es")
+        doc = es(normalized)
+        ents = nlp_es.extract_entities(doc)
+        assert len(ents) > 0
+        for ent in ents:
+            assert "es" not in ent["text"].lower()
+
+
+class TestNLPProcessorMisc:
+    def test_int_list_valid(self, nlp) -> None:
+        result = NLPProcessor._int_list([1, 2, 3])
+        assert result == [1, 2, 3]
+
+    def test_int_list_mixed(self, nlp) -> None:
+        result = NLPProcessor._int_list([1, "a", 3])
+        assert result == [1, 3]
+
+    def test_int_list_empty(self, nlp) -> None:
+        result = NLPProcessor._int_list([])
+        assert result is None
+
+    def test_int_list_not_list(self, nlp) -> None:
+        result = NLPProcessor._int_list("hello")
+        assert result is None
+
+    def test_int_list_no_ints(self, nlp) -> None:
+        result = NLPProcessor._int_list(["a", "b"])
+        assert result is None
+
 
 class TestDecompose:
     def test_single(self, nlp) -> None:

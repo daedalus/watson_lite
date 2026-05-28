@@ -216,3 +216,25 @@ class TestClassifyQuestionWord:
     def test_where_returns_time(self, nlp) -> None:
         doc = nlp("Where is Paris?")
         assert _classify_question_word(doc, "where") == "time"
+
+    def test_det_returns_person(self, nlp) -> None:
+        doc = nlp("Which planet?")
+        assert _classify_question_word(doc, "which") == "person"
+
+    def test_unknown_pos_returns_none(self, nlp) -> None:
+        doc = nlp("Hello world")
+        assert _classify_question_word(doc, "hello") is None
+
+
+class TestDetectQuestionWordEdgeCases:
+    def test_non_interrogative_pronoun(self, nlp) -> None:
+        doc = nlp("I am here")
+        assert _detect_question_word(doc) is None
+
+    def test_adp_non_interrogative(self, nlp) -> None:
+        doc = nlp("Give to me")
+        assert _detect_question_word(doc) is None
+
+    def test_empty_doc(self, nlp) -> None:
+        doc = nlp("")
+        assert _detect_question_word(doc) is None

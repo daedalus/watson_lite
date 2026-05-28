@@ -1,3 +1,5 @@
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -760,3 +762,123 @@ class TestWatsonLite:
         assert result.answer == "Paris"
         # Scorer called only once (no refined pass succeeded)
         assert self.mock_scorer.score.call_count == 1
+
+
+class TestModelSelection:
+    def setup_method(self) -> None:
+        self.patches = [
+            patch("watson_lite.pipeline.NLPProcessor"),
+            patch("watson_lite.pipeline.BM25Retriever"),
+            patch("watson_lite.pipeline.VectorRetriever"),
+            patch("watson_lite.pipeline.WikidataGraph"),
+            patch("watson_lite.pipeline.Ranker"),
+            patch("watson_lite.pipeline.ExtractiveReader"),
+            patch("watson_lite.pipeline.ConfidenceScorer"),
+        ]
+        self.mocks = [p.start() for p in self.patches]
+        (
+            self.mock_nlp_cls,
+            self.mock_bm25_cls,
+            self.mock_vector_cls,
+            self.mock_graph_cls,
+            self.mock_ranker_cls,
+            self.mock_reader_cls,
+            self.mock_scorer_cls,
+        ) = self.mocks
+
+    def teardown_method(self) -> None:
+        for p in self.patches:
+            p.stop()
+
+    def test_select_models_non_english(self) -> None:
+        from watson_lite.pipeline import (
+            _MULTILINGUAL_EMBED_MODEL,
+            _MULTILINGUAL_CE_MODEL,
+            _MULTILINGUAL_NLI_MODEL,
+        )
+        cfg = (
+            FeatureConfig.baseline()
+            .with_feature("embed_model", None)
+            .with_feature("cross_encoder_model", None)
+            .with_feature("nli_model", None)
+        )
+        pl = WatsonLite(config=cfg)
+        pl._select_models_for_language("es")
+        assert pl._current_embed_model == _MULTILINGUAL_EMBED_MODEL
+        assert pl._current_ce_model == _MULTILINGUAL_CE_MODEL
+        assert pl._current_nli_model == _MULTILINGUAL_NLI_MODEL
+
+    def test_select_models_config_overrides(self) -> None:
+        from watson_lite.pipeline import (
+            _MULTILINGUAL_EMBED_MODEL,
+            _MULTILINGUAL_CE_MODEL,
+            _ENGLISH_NLI_MODEL,
+        )
+        cfg = (
+            FeatureConfig.baseline()
+            .with_feature("embed_model", "test-embed")
+            .with_feature("cross_encoder_model", "test-ce")
+            .with_feature("nli_model", "test-nli")
+        )
+        pl = WatsonLite(config=cfg)
+        pl._select_models_for_language("es")
+        # When config explicitly sets embed_model/ce_model, _select_models
+        # skips overwriting _current_*_model (because the config is not None).
+        # nli_model is special: line 130 checks it, then else on 134 sets it.
+        assert pl._current_embed_model == _MULTILINGUAL_EMBED_MODEL
+        assert pl._current_ce_model == _MULTILINGUAL_CE_MODEL
+        assert pl._current_nli_model == "test-nli"
+        # Verify the config override is used for runtime lookups
+        v = pl._get_vector()
+        assert v is not None
+        assert pl._vector_cache.get("test-embed") is not None
+
+    def test_select_models_english(self) -> None:
+        from watson_lite.pipeline import (
+            _ENGLISH_EMBED_MODEL,
+            _ENGLISH_CE_MODEL,
+            _ENGLISH_NLI_MODEL,
+        )
+        cfg = (
+            FeatureConfig.baseline()
+            .with_feature("embed_model", None)
+            .with_feature("cross_encoder_model", None)
+            .with_feature("nli_model", None)
+        )
+        pl = WatsonLite(config=cfg)
+        pl._select_models_for_language("en")
+        assert pl._current_embed_model == _ENGLISH_EMBED_MODEL
+        assert pl._current_ce_model == _ENGLISH_CE_MODEL
+        assert pl._current_nli_model == _ENGLISH_NLI_MODEL
+
+
+class TestPrebuiltIndex:
+    def setup_method(self) -> None:
+        self.index_dir = tempfile.mkdtemp()
+
+    def teardown_method(self) -> None:
+        import shutil
+        shutil.rmtree(self.index_dir, ignore_errors=True)
+
+    def test_load_prebuilt_index_no_index_dir(self) -> None:
+        cfg = FeatureConfig.baseline().with_feature("index_dir", None)
+        pl = WatsonLite(config=cfg)
+        assert not pl._index_loaded
+
+    @patch("watson_lite.pipeline.BM25Retriever")
+    @patch("watson_lite.pipeline.VectorRetriever")
+    def test_load_prebuilt_index_with_dirs(
+        self, mock_vector_cls, mock_bm25_cls
+    ) -> None:
+        os.makedirs(os.path.join(self.index_dir, "bm25"))
+        mock_bm25 = MagicMock()
+        mock_bm25.passages = []
+        mock_bm25_cls.load.return_value = mock_bm25
+
+        cfg = (
+            FeatureConfig.baseline()
+            .with_feature("index_dir", self.index_dir)
+            .with_feature("vector_retrieval", False)
+        )
+        pl = WatsonLite(config=cfg)
+        assert pl._index_loaded
