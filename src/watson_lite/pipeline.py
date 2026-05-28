@@ -395,7 +395,7 @@ class WatsonLite:
                         source="title_match",
                         url="",
                         passage=f"Entity mentioned in question: {entity_text}",
-                        extraction_score=0.3,
+                        extraction_score=0.01,
                         rank=99,
                     )
                 )

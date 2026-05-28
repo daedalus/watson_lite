@@ -323,15 +323,27 @@ class NLPProcessor:
         return "unknown"
 
     def extract_entities(self, doc: Doc) -> list[dict[str, str | int]]:
-        return [
-            {
-                "text": ent.text,
-                "label": ent.label_,
-                "start": ent.start_char,
-                "end": ent.end_char,
-            }
-            for ent in doc.ents
-        ]
+        def _entity_has_verb(ent):
+            return any(t.pos_ == "VERB" for t in ent)
+        entities = []
+        for ent in doc.ents:
+            if not _entity_has_verb(ent):
+                entities.append({
+                    "text": ent.text,
+                    "label": ent.label_,
+                    "start": ent.start_char,
+                    "end": ent.end_char,
+                })
+        if not entities:
+            for chunk in doc.noun_chunks:
+                if not any(t.pos_ == "VERB" for t in chunk):
+                    entities.append({
+                        "text": chunk.text,
+                        "label": "NP",
+                        "start": chunk.start_char,
+                        "end": chunk.end_char,
+                    })
+        return entities
 
     def extract_keywords(self, doc: Doc) -> list[str]:
         return [
