@@ -424,7 +424,7 @@ fields:
 ```
 @misc{watson_lite,
   author = {Darío Clavijo},
-  title = {watson_lite},
+  title = {A Watson-inspired extractive QA system that runs on a laptop.},
   year = {2026},
   url = {https://github.com/daedalus/watson_lite/releases/tag/v0.1.3},
   note = {Version 0.1.3}
