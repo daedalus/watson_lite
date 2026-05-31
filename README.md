@@ -419,3 +419,13 @@ fields:
 ### Other extensions
 
 - Add more graph sources: Wikidata REST API pattern is reusable.
+
+## Citation
+
+@misc{watson_lite,
+  author = {Darío Clavijo},
+  title = {watson_lite},
+  year = {2026},
+  url = {https://github.com/daedalus/watson_lite/releases/tag/v0.1.3},
+  note = {Version 0.1.3}
+}
