@@ -129,6 +129,7 @@ class TestStableSoftmax:
 
     def test_all_negative(self) -> None:
         import math
+
         result = _stable_softmax([-1e10, -1e10])
         assert result == [0.5, 0.5]
 
@@ -158,6 +159,7 @@ class TestCoerceToFloatVector:
 class TestConfigureEntailmentModel:
     def test_resets_scorer(self) -> None:
         import watson_lite.scoring.entailment as entailment_mod
+
         entailment_mod._ENTAILMENT_SCORER = MagicMock()
         entailment_mod._ENTAILMENT_UNAVAILABLE = True
         configure_entailment_model("cross-encoder/nli-deberta-v3-small")

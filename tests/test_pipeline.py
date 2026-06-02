@@ -796,6 +796,7 @@ class TestModelSelection:
             _MULTILINGUAL_CE_MODEL,
             _MULTILINGUAL_NLI_MODEL,
         )
+
         cfg = (
             FeatureConfig.baseline()
             .with_feature("embed_model", None)
@@ -814,6 +815,7 @@ class TestModelSelection:
             _MULTILINGUAL_CE_MODEL,
             _ENGLISH_NLI_MODEL,
         )
+
         cfg = (
             FeatureConfig.baseline()
             .with_feature("embed_model", "test-embed")
@@ -839,6 +841,7 @@ class TestModelSelection:
             _ENGLISH_CE_MODEL,
             _ENGLISH_NLI_MODEL,
         )
+
         cfg = (
             FeatureConfig.baseline()
             .with_feature("embed_model", None)
@@ -858,6 +861,7 @@ class TestPrebuiltIndex:
 
     def teardown_method(self) -> None:
         import shutil
+
         shutil.rmtree(self.index_dir, ignore_errors=True)
 
     def test_load_prebuilt_index_no_index_dir(self) -> None:

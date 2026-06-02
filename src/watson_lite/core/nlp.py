@@ -38,7 +38,9 @@ def _ner_input(text: str, nlp: Any, language: str = "en") -> str:
     tagger_pipe = "tagger" if nlp.has_pipe("tagger") else "morphologizer"
     with nlp.select_pipes(enable=["tok2vec", tagger_pipe, "attribute_ruler"]):
         doc = nlp(text)
-    capitalise = {"NOUN", "PROPN", "ADJ", "ADV"} if language == "en" else {"NOUN", "PROPN"}
+    capitalise = (
+        {"NOUN", "PROPN", "ADJ", "ADV"} if language == "en" else {"NOUN", "PROPN"}
+    )
     parts = [
         t.text.capitalize() if t.pos_ in capitalise and t.text.islower() else t.text
         for t in doc
@@ -325,24 +327,29 @@ class NLPProcessor:
     def extract_entities(self, doc: Doc) -> list[dict[str, str | int]]:
         def _entity_has_verb(ent):
             return any(t.pos_ == "VERB" for t in ent)
+
         entities = []
         for ent in doc.ents:
             if not _entity_has_verb(ent):
-                entities.append({
-                    "text": ent.text,
-                    "label": ent.label_,
-                    "start": ent.start_char,
-                    "end": ent.end_char,
-                })
+                entities.append(
+                    {
+                        "text": ent.text,
+                        "label": ent.label_,
+                        "start": ent.start_char,
+                        "end": ent.end_char,
+                    }
+                )
         if not entities:
             for chunk in doc.noun_chunks:
                 if not any(t.pos_ == "VERB" for t in chunk):
-                    entities.append({
-                        "text": chunk.text,
-                        "label": "NP",
-                        "start": chunk.start_char,
-                        "end": chunk.end_char,
-                    })
+                    entities.append(
+                        {
+                            "text": chunk.text,
+                            "label": "NP",
+                            "start": chunk.start_char,
+                            "end": chunk.end_char,
+                        }
+                    )
         return entities
 
     def extract_keywords(self, doc: Doc) -> list[str]:

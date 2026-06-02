@@ -13,7 +13,6 @@ authors = [
     {name = "Dario Clavijo", email = "clavijodario@gmail.com"}
 ]
 dependencies = [
-    "bitarray>=3.0.0",
     "bm25s>=0.1.0",
     "langdetect>=1.0.9",
     "requests>=2.31.0",

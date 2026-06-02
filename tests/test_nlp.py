@@ -47,6 +47,7 @@ class TestQuestionClassification:
 class TestExtractEntities:
     def test_filters_entity_with_verb(self, nlp) -> None:
         import spacy
+
         doc = nlp.nlp("Who built the Eiffel Tower?")
         ents = nlp.extract_entities(doc)
         for ent in ents:
@@ -54,6 +55,7 @@ class TestExtractEntities:
 
     def test_spanish_entity_without_verb(self) -> None:
         import spacy
+
         try:
             es = spacy.load("es_core_news_sm")
         except OSError:
@@ -61,6 +63,7 @@ class TestExtractEntities:
         nlp_es = NLPProcessor(language="es")
         text = "¿Qué ciudad es la capital de Francia?"
         from watson_lite.core.nlp import _ner_input
+
         normalized = _ner_input(text, es, language="es")
         doc = es(normalized)
         ents = nlp_es.extract_entities(doc)

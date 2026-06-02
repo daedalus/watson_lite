@@ -182,10 +182,10 @@ class TestBloomFilter:
         os.close(fd)
         c = Cache(path)
         c.set("known", "value")
-        before = c._bloom._bits.count()
+        before = bytes(c._bloom._bits)
         assert c.get("known") == "value"
         assert c.get("definitely_missing") is None
-        after = c._bloom._bits.count()
+        after = bytes(c._bloom._bits)
         assert after == before
         c.close()
         os.unlink(path)
@@ -257,9 +257,9 @@ class TestBloomFilterAdversarial:
 
         bf = BloomFilter(capacity=100)
         bf.add("dup")
-        before = bf._bits.count()
+        before = sum(b.bit_count() for b in bf._bits)
         bf.add("dup")
-        after = bf._bits.count()
+        after = sum(b.bit_count() for b in bf._bits)
         assert after >= before
 
     def test_query_empty_filter(self) -> None:

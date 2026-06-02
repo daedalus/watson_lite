@@ -11,8 +11,6 @@ from copy import deepcopy
 from threading import Lock
 from typing import Any, TypedDict
 
-import bitarray
-
 logger = logging.getLogger(__name__)
 
 # Store the cache database in a platform-appropriate user cache directory so
@@ -29,12 +27,18 @@ _BLOOM_ERROR_RATE = 0.01
 
 
 class BloomFilter:
-    """Bloom filter backed by a :mod:`bitarray` bitmap.
+    """Bloom filter backed by a :class:`bytearray`.
 
     Uses a single SHA-256 hash with bit-variable slicing to produce *k*
     independent index positions from the 256-bit digest.  The filter size *m*
     is rounded up to a power of two so that fast bitwise masking (``& (m-1)``)
     can replace modulo.
+
+    Each position *p* is mapped to a byte in the backing array and a bit
+    within that byte::
+
+        byte_idx = (p & mask) >> 3
+        bit_idx  = (p & mask) & 7
     """
 
     def __init__(self, capacity: int, error_rate: float = _BLOOM_ERROR_RATE) -> None:
@@ -45,8 +49,8 @@ class BloomFilter:
         self._bits_per_slice = self.m.bit_length() - 1
         self._k = max(1, 256 // self._bits_per_slice)
 
-        self._bits = bitarray.bitarray(self.m, endian="little")
-        self._bits.setall(False)
+        self._byte_len = (self.m + 7) // 8
+        self._bits = bytearray(self._byte_len)
 
     @staticmethod
     def _digest(key: str) -> int:
@@ -55,7 +59,10 @@ class BloomFilter:
     def _check(self, value: int) -> bool:
         v = value
         for _ in range(self._k):
-            if not self._bits[v & self._mask]:
+            pos = v & self._mask
+            byte_idx = pos >> 3
+            bit_idx = pos & 7
+            if not (self._bits[byte_idx] & (1 << bit_idx)):
                 return False
             v >>= self._bits_per_slice
         return True
@@ -63,7 +70,10 @@ class BloomFilter:
     def _set(self, value: int) -> None:
         v = value
         for _ in range(self._k):
-            self._bits[v & self._mask] = True
+            pos = v & self._mask
+            byte_idx = pos >> 3
+            bit_idx = pos & 7
+            self._bits[byte_idx] |= 1 << bit_idx
             v >>= self._bits_per_slice
 
     def add(self, key: str) -> None:
@@ -83,10 +93,11 @@ class BloomFilter:
     @property
     def load_factor(self) -> float:
         """Fraction of bits set to 1.  Used to decide when to resize."""
-        return self._bits.count() / self.m
+        bits_set = sum(b.bit_count() for b in self._bits)
+        return bits_set / self.m
 
     def clear(self) -> None:
-        self._bits.setall(False)
+        self._bits = bytearray(self._byte_len)
 
 
 class CacheMetrics(TypedDict):

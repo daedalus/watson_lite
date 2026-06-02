@@ -134,7 +134,9 @@ class WatsonLite:
         else:
             self._current_nli_model = self.config.nli_model
         self._current_extractive_model = (
-            _ENGLISH_EXTRACTIVE_MODEL if language == "en" else _MULTILINGUAL_EXTRACTIVE_MODEL
+            _ENGLISH_EXTRACTIVE_MODEL
+            if language == "en"
+            else _MULTILINGUAL_EXTRACTIVE_MODEL
         )
 
     def _get_nlp(self, language: str = "en") -> NLPProcessor:
