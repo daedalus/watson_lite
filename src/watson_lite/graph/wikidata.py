@@ -3,7 +3,7 @@ import time
 from typing import Any
 from urllib.error import HTTPError
 
-import requests
+import requests  # noqa: F401 - re-exported for test mocks
 
 try:
     from SPARQLWrapper import JSON, SPARQLWrapper
@@ -16,16 +16,14 @@ else:
 
 from watson_lite.core.cache import get_cache, is_cache_miss
 from watson_lite.core.models import EntityFact, GraphResult
+from watson_lite.core.network import USER_AGENT, request_json
 
 logger = logging.getLogger(__name__)
 
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
-USER_AGENT = "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
 _NEGATIVE_CACHE_TTL_SECONDS = 300
 _REQUEST_TIMEOUT_SECONDS = 15
-_REQUEST_MAX_ATTEMPTS = 3
-_REQUEST_BACKOFF_SECONDS = 1.0
-_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_SPARQL_TIMEOUT_SECONDS = 30
 
 # Static mapping of the most frequently encountered Wikidata property IDs to
 # their English labels.  Unknown PIDs fall back to the raw ID string.
@@ -75,79 +73,25 @@ _PROPERTY_LABELS: dict[str, str] = {
 }
 
 
-def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
-    retry_after: str | None = None
-    headers = getattr(response, "headers", None)
-    if headers is not None and hasattr(headers, "get"):
-        retry_after_value = headers.get("Retry-After")
-        if retry_after_value is not None:
-            retry_after = str(retry_after_value)
-    if retry_after:
-        try:
-            return float(max(float(retry_after), 0.0))
-        except ValueError:
-            logger.debug("Ignoring invalid Retry-After header: %s", retry_after)
-    return float(_REQUEST_BACKOFF_SECONDS * (2**attempt))
-
-
 def _request_json(
     url: str,
     *,
     params: dict[str, Any] | None = None,
     context: str,
 ) -> dict[str, Any] | None:
-    headers = {"User-Agent": USER_AGENT}
-    for attempt in range(_REQUEST_MAX_ATTEMPTS):
-        try:
-            response = requests.get(
-                url,
-                params=params,
-                headers=headers,
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-            )
-        except Exception as err:  # pragma: no cover - defensive network isolation
-            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
-                logger.warning("%s failed: %s", context, err)
-                return None
-            wait = _REQUEST_BACKOFF_SECONDS * (2**attempt)
-            logger.warning("%s failed, retrying in %.1fs: %s", context, wait, err)
-            time.sleep(wait)
-            continue
-
-        status = int(getattr(response, "status_code", 200))
-        if status in _RETRYABLE_STATUS_CODES:
-            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
-                logger.warning("%s failed: HTTP %s", context, status)
-                return None
-            wait = _retry_delay_seconds(response, attempt)
-            logger.warning(
-                "%s transient failure/rate limit: HTTP %s; retrying in %.1fs",
-                context,
-                status,
-                wait,
-            )
-            time.sleep(wait)
-            continue
-
-        if status >= 400:
-            logger.warning("%s failed: HTTP %s", context, status)
-            return None
-
-        try:
-            payload = response.json()
-        except Exception as err:  # pragma: no cover - defensive parsing guard
-            logger.warning("%s parse failed: %s", context, err)
-            return None
-        if not isinstance(payload, dict):
-            logger.warning("%s returned non-object JSON", context)
-            return None
-        return payload
-    return None
+    """Thin wrapper around :func:`core.network.request_json` for backward compat."""
+    return request_json(
+        url,
+        params=params,
+        timeout=_REQUEST_TIMEOUT_SECONDS,
+        context=context,
+    )
 
 
 class WikidataGraph:
-    def __init__(self) -> None:
+    def __init__(self, sparql_endpoint: str | None = None) -> None:
         self.sparql = None
+        self._sparql_endpoint = sparql_endpoint or WIKIDATA_ENDPOINT
 
     def _ensure_sparql(self) -> Any:  # noqa: ANN401
         if self.sparql is not None:
@@ -159,7 +103,7 @@ class WikidataGraph:
                 "SPARQL fallback requires SPARQLWrapper. "
                 "Install watson-lite with the 'graph' or 'full' extra."
             ) from _SPARQL_IMPORT_ERROR
-        sparql = sparql_cls(WIKIDATA_ENDPOINT)
+        sparql = sparql_cls(self._sparql_endpoint)
         sparql.addCustomHttpHeader("User-Agent", USER_AGENT)
         sparql.setReturnFormat(json_format)
         self.sparql = sparql

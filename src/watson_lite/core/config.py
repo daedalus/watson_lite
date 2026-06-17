@@ -32,6 +32,9 @@ class FeatureConfig:
     huggingface_split: str | None = None
     huggingface_token: str | None = None
     offline_dataset_dir: str | None = None
+    wikidata_sparql_endpoint: str | None = None
+    dbpedia_sparql_endpoint: str | None = None
+    sparql_timeout_seconds: int = 30
     wikipedia_top_k_per_query: int = 5
     retrieval_top_k: int = 20
     rerank_top_k: int = 10

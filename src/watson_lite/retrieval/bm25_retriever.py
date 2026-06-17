@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import re
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -16,6 +15,11 @@ import requests
 
 from watson_lite.core.cache import get_cache, is_cache_miss
 from watson_lite.core.models import Passage
+from watson_lite.core.network import (
+    DEFAULT_TIMEOUT_SECONDS,
+    WIKI_HEADERS,
+    request_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,7 @@ HUGGINGFACE_TOKEN_ENV = "WATSON_LITE_HUGGINGFACE_TOKEN"
 STACKEXCHANGE_SITE_ENV = "WATSON_LITE_STACKEXCHANGE_SITE"
 ELASTICSEARCH_TIMEOUT_SECONDS = 10
 HUGGINGFACE_DATASET_SERVER_SEARCH = "https://datasets-server.huggingface.co/search"
+DBPEDIA_SPARQL_ENDPOINT_ENV = "WATSON_LITE_DBPEDIA_SPARQL_ENDPOINT"
 # Keep chunks comfortably below the reader's context budget while leaving room
 # for sentence overlap, which reduces edge-truncation during extraction.
 CHUNK_SIZE = 180
@@ -50,13 +55,7 @@ CHUNK_OVERLAP_SENTENCES = 1
 MIN_CHUNK_WORDS = 20
 FALLBACK_CHUNK_STEP = CHUNK_SIZE // 2
 _NEGATIVE_CACHE_TTL_SECONDS = 300
-_REQUEST_TIMEOUT_SECONDS = 10
-_REQUEST_MAX_ATTEMPTS = 3
-_REQUEST_BACKOFF_SECONDS = 1.0
-_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
-WIKI_HEADERS = {
-    "User-Agent": "WatsonLite/1.0 (educational project; clavijodario@gmail.com)"
-}
+SPARQL_TIMEOUT_SECONDS = 30
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _NON_WORD_RE = re.compile(r"\W+")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -110,21 +109,6 @@ def _extract_xml_tag_text(payload: str, tag: str) -> str:
     return html.unescape(value).strip()
 
 
-def _retry_delay_seconds(response: Any, attempt: int) -> float:  # noqa: ANN401
-    retry_after: str | None = None
-    headers = getattr(response, "headers", None)
-    if headers is not None and hasattr(headers, "get"):
-        retry_after_value = headers.get("Retry-After")
-        if retry_after_value is not None:
-            retry_after = str(retry_after_value)
-    if retry_after:
-        try:
-            return float(max(float(retry_after), 0.0))
-        except ValueError:
-            logger.debug("Ignoring invalid Retry-After header: %s", retry_after)
-    return float(_REQUEST_BACKOFF_SECONDS * (2**attempt))
-
-
 def _request_json(
     url: str,
     *,
@@ -132,74 +116,8 @@ def _request_json(
     cache_namespace: str,
     context: str,
 ) -> dict[str, Any] | None:
-    for attempt in range(_REQUEST_MAX_ATTEMPTS):
-        try:
-            response = requests.get(
-                url,
-                params=params,
-                headers=WIKI_HEADERS,
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-            )
-        except Exception as err:  # pragma: no cover - defensive network isolation
-            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
-                logger.warning(
-                    "%s request failed (%s): %s", context, cache_namespace, err
-                )
-                return None
-            wait = _REQUEST_BACKOFF_SECONDS * (2**attempt)
-            logger.warning(
-                "%s request failed (%s), retrying in %.1fs: %s",
-                context,
-                cache_namespace,
-                wait,
-                err,
-            )
-            time.sleep(wait)
-            continue
-
-        status = int(getattr(response, "status_code", 200))
-        if status in _RETRYABLE_STATUS_CODES:
-            if attempt == _REQUEST_MAX_ATTEMPTS - 1:
-                logger.warning(
-                    "%s request failed (%s): HTTP %s",
-                    context,
-                    cache_namespace,
-                    status,
-                )
-                return None
-            wait = _retry_delay_seconds(response, attempt)
-            logger.warning(
-                "%s request rate-limited/transient failure (%s): HTTP %s; retrying in %.1fs",
-                context,
-                cache_namespace,
-                status,
-                wait,
-            )
-            time.sleep(wait)
-            continue
-
-        if status >= 400:
-            logger.warning(
-                "%s request failed (%s): HTTP %s", context, cache_namespace, status
-            )
-            return None
-
-        try:
-            payload = response.json()
-        except Exception as err:  # pragma: no cover - defensive parsing guard
-            logger.warning(
-                "%s response parse failed (%s): %s", context, cache_namespace, err
-            )
-            return None
-
-        if not isinstance(payload, dict):
-            logger.warning(
-                "%s response was not a JSON object (%s)", context, cache_namespace
-            )
-            return None
-        return payload
-
-    return None
+    """Thin wrapper around :func:`core.network.request_json` for backward compat."""
+    return request_json(url, params=params, context=f"{context} ({cache_namespace})")
 
 
 def _safe_request_json(
@@ -209,24 +127,14 @@ def _safe_request_json(
     source: str,
     headers: dict[str, Any] | None = None,
 ) -> Any | None:  # noqa: ANN401
-    try:
-        resp = requests.get(
-            url,
-            params=params,
-            headers=headers or WIKI_HEADERS,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as exc:
-        logger.warning("%s request failed: %s", source, exc)
-        return None
-    if resp.status_code >= 400:
-        logger.warning("%s request failed: HTTP %s", source, int(resp.status_code))
-        return None
-    try:
-        return resp.json()
-    except Exception as exc:
-        logger.warning("%s response parse failed: %s", source, exc)
-        return None
+    """Single-attempt JSON request (no retry)."""
+    return request_json(
+        url,
+        params=params,
+        headers=headers,
+        context=source,
+        max_attempts=1,
+    )
 
 
 def _chunk_text(text: str) -> list[str]:
@@ -683,7 +591,7 @@ def fetch_huggingface_passages(  # pylint: disable=too-many-arguments
             HUGGINGFACE_DATASET_SERVER_SEARCH,
             params=params,
             headers=_huggingface_headers(resolved_token),
-            timeout=_REQUEST_TIMEOUT_SECONDS,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
         )
     except Exception as err:  # pragma: no cover - defensive network isolation
         logger.warning("Hugging Face datasets-server request failed: %s", err)
@@ -911,7 +819,7 @@ def fetch_arxiv_passages(
                 "sortOrder": "descending",
             },
             headers=WIKI_HEADERS,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
         )
     except Exception as err:  # pragma: no cover - defensive network isolation
         logger.warning("arXiv request failed: %s", err)
@@ -1297,24 +1205,27 @@ def fetch_dbpedia_passages(
     return passages
 
 
-def fetch_dbpedia_sparql_passages(
-    query: str, *, top_k: int = WIKI_SEARCH_LIMIT
-) -> list[Passage]:
-    """Fetch passages from DBpedia via SPARQL abstract queries.
+def _build_dbpedia_sparql_query_bif(query: str, top_k: int) -> str:
+    """Build a DBpedia SPARQL query using bif:contains for full-text search."""
+    safe_query = re.sub(r'["\'\\]', " ", query).strip()
+    terms = " OR ".join(f'"{t}"' for t in safe_query.split() if t)
+    return (
+        "PREFIX dbo: <http://dbpedia.org/ontology/> "
+        "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+        "SELECT DISTINCT ?resource ?label ?abstract WHERE { "
+        "  ?resource rdfs:label ?label . "
+        "  ?resource dbo:abstract ?abstract . "
+        "  FILTER(lang(?abstract) = 'en') "
+        "  FILTER(lang(?label) = 'en') "
+        f'  ?resource rdfs:label ?label . ?label bif:contains "{terms}" . '
+        f"}} LIMIT {top_k}"
+    )
 
-    Runs a SPARQL SELECT against the public DBpedia endpoint and returns
-    the English-language abstracts of matching resources as Passage objects.
-    """
-    cache = get_cache()
-    normalized_query = query.lower().strip()
-    cache_key = f"dbpedia_sparql:passages:{normalized_query}:top_k={top_k}"
-    cached = cache.get_or_sentinel(cache_key)
-    if not is_cache_miss(cached):
-        logger.debug("Cache hit: %s", cache_key)
-        return [Passage(**p) for p in cached]
 
-    safe_query = re.sub(r'["\'\\]', " ", normalized_query).strip()
-    sparql = (
+def _build_dbpedia_sparql_query_contains(query: str, top_k: int) -> str:
+    """Build a DBpedia SPARQL query using FILTER(CONTAINS(...)) fallback."""
+    safe_query = re.sub(r'["\'\\]', " ", query).strip()
+    return (
         "PREFIX dbo: <http://dbpedia.org/ontology/> "
         "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
         "SELECT DISTINCT ?resource ?label ?abstract WHERE { "
@@ -1326,13 +1237,19 @@ def fetch_dbpedia_sparql_passages(
         f"}} LIMIT {top_k}"
     )
 
-    payload = _safe_request_json(
-        DBPEDIA_SPARQL_ENDPOINT,
-        {"query": sparql, "format": "application/sparql-results+json"},
-        source="DBpedia SPARQL",
+
+def _run_dbpedia_sparql(
+    sparql: str,
+    resolved_endpoint: str,
+) -> list[Passage]:
+    """Execute a DBpedia SPARQL query and format results as passages."""
+    payload = request_json(
+        resolved_endpoint,
+        params={"query": sparql, "format": "application/sparql-results+json"},
+        timeout=SPARQL_TIMEOUT_SECONDS,
+        context="DBpedia SPARQL",
     )
     if payload is None:
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
     bindings = (
@@ -1341,7 +1258,6 @@ def fetch_dbpedia_sparql_passages(
         else []
     )
     if not isinstance(bindings, list):
-        cache.set(cache_key, [], ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
         return []
 
     passages: list[Passage] = []
@@ -1350,6 +1266,45 @@ def fetch_dbpedia_sparql_passages(
         if not isinstance(binding, dict):
             continue
         _format_dbpedia_sparql_passage(binding, passages, seen_chunks)
+    return passages
+
+
+def fetch_dbpedia_sparql_passages(
+    query: str,
+    *,
+    top_k: int = WIKI_SEARCH_LIMIT,
+    endpoint: str | None = None,
+) -> list[Passage]:
+    """Fetch passages from DBpedia via SPARQL abstract queries.
+
+    Tries full-text ``bif:contains`` search first, falling back to
+    ``FILTER(CONTAINS(...))`` when the indexed search is unavailable.
+    """
+    cache = get_cache()
+    normalized_query = query.lower().strip()
+    cache_key = f"dbpedia_sparql:passages:{normalized_query}:top_k={top_k}"
+    cached = cache.get_or_sentinel(cache_key)
+    if not is_cache_miss(cached):
+        logger.debug("Cache hit: %s", cache_key)
+        return [Passage(**p) for p in cached]
+
+    resolved_endpoint = (
+        endpoint
+        or os.getenv(DBPEDIA_SPARQL_ENDPOINT_ENV)
+        or DBPEDIA_SPARQL_ENDPOINT
+    )
+    capped_top_k = min(top_k, 50)
+
+    # Try bif:contains (full-text indexed search) first
+    sparql_bif = _build_dbpedia_sparql_query_bif(normalized_query, capped_top_k)
+    passages = _run_dbpedia_sparql(sparql_bif, resolved_endpoint)
+
+    # Fall back to CONTAINS if bif:contains returned nothing
+    if not passages:
+        sparql_contains = _build_dbpedia_sparql_query_contains(
+            normalized_query, capped_top_k
+        )
+        passages = _run_dbpedia_sparql(sparql_contains, resolved_endpoint)
 
     cache.set(cache_key, [p.__dict__ for p in passages])
     logger.debug("Cache set: %s (%d passages)", cache_key, len(passages))

@@ -159,7 +159,9 @@ class WatsonLite:
 
     def _get_graph(self) -> WikidataGraph:
         if self.graph is None:
-            self.graph = WikidataGraph()
+            self.graph = WikidataGraph(
+                sparql_endpoint=self.config.wikidata_sparql_endpoint,
+            )
         return self.graph
 
     def _get_ranker(self) -> Ranker:

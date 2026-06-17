@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING, Any
 import requests
 
 from watson_lite.core.cache import get_cache, is_cache_miss
+from watson_lite.core.network import USER_AGENT
 
 if TYPE_CHECKING:
     from watson_lite.core.models import AnswerCandidate
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "WatsonLite/1.0 (research project; clavijodario@gmail.com)"
 _NEGATIVE_CACHE_TTL_SECONDS = 300
 
 # Wikidata type hierarchy cache: QID -> set of ancestor QIDs

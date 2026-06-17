@@ -27,6 +27,9 @@ from watson_lite.retrieval.dataset_query_engine import DatasetProvider
 from watson_lite.retrieval.offline_dataset_retriever import (
     fetch_offline_dataset_passages,
 )
+from watson_lite.retrieval.wikidata_sparql_fetcher import (
+    fetch_wikidata_sparql_passages,
+)
 
 if TYPE_CHECKING:
     from watson_lite.core.config import FeatureConfig
@@ -158,7 +161,21 @@ def _builtin_online_plugins(
             "dbpedia_sparql",
             mode="online",
             description="DBpedia SPARQL retriever",
-            fetcher=fetch_dbpedia_sparql_passages,
+            fetcher=lambda query, *, top_k: fetch_dbpedia_sparql_passages(
+                query,
+                top_k=top_k,
+                endpoint=config.dbpedia_sparql_endpoint,
+            ),
+        ),
+        DatasetRetrieverPlugin(
+            "wikidata_sparql",
+            mode="online",
+            description="Wikidata SPARQL retriever",
+            fetcher=lambda query, *, top_k: fetch_wikidata_sparql_passages(
+                query,
+                top_k=top_k,
+                endpoint=config.wikidata_sparql_endpoint,
+            ),
         ),
         DatasetRetrieverPlugin(
             "oeis",

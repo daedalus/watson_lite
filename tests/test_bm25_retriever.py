@@ -30,7 +30,7 @@ class TestFetchWikipediaPassages:
         # Default: every key is a cache miss.
         self.mock_cache.get_or_sentinel.return_value = SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
-        self.sleep_patcher = patch("watson_lite.retrieval.bm25_retriever.time.sleep")
+        self.sleep_patcher = patch("watson_lite.core.network.time.sleep")
         self.sleep_patcher.start()
 
     def teardown_method(self) -> None:
@@ -583,9 +583,12 @@ class TestFetchDBpediaSparqlPassages:
         self.mock_cache = MagicMock()
         self.mock_cache.get_or_sentinel.return_value = SENTINEL
         self.mock_get_cache.return_value = self.mock_cache
+        self.sleep_patcher = patch("watson_lite.core.network.time.sleep")
+        self.mock_sleep = self.sleep_patcher.start()
 
     def teardown_method(self) -> None:
         self.cache_patcher.stop()
+        self.sleep_patcher.stop()
 
     @patch("watson_lite.retrieval.bm25_retriever.requests.get")
     def test_sparql_success(self, mock_get: MagicMock) -> None:
@@ -703,3 +706,91 @@ class TestFetchDBpediaSparqlPassages:
 
         assert len(result) == 1
         assert result[0].text == "cached text"
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_retries_on_429(self, mock_get: MagicMock) -> None:
+        """429 responses should be retried with backoff."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "1"}
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.json.return_value = {"results": {"bindings": []}}
+        # bif:contains gets 429 then succeeds; CONTAINS fallback succeeds
+        mock_get.side_effect = [rate_limited, ok, ok]
+
+        result = fetch_dbpedia_sparql_passages("python")
+
+        assert result == []
+        assert mock_get.call_count == 3
+        assert self.mock_sleep.call_count >= 1
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_retries_on_network_error(self, mock_get: MagicMock) -> None:
+        """Network exceptions should be retried."""
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.json.return_value = {"results": {"bindings": []}}
+        # bif:contains fails then succeeds; CONTAINS fallback succeeds
+        mock_get.side_effect = [Exception("Connection reset"), ok, ok]
+
+        result = fetch_dbpedia_sparql_passages("python")
+
+        assert result == []
+        assert mock_get.call_count == 3
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_top_k_capped(self, mock_get: MagicMock) -> None:
+        """top_k should be capped to prevent timeout on large requests."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"results": {"bindings": []}}
+        mock_get.return_value = response
+
+        fetch_dbpedia_sparql_passages("python", top_k=200)
+
+        sparql_sent = mock_get.call_args[1]["params"]["query"]
+        assert "LIMIT 50" in sparql_sent
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_custom_endpoint(self, mock_get: MagicMock) -> None:
+        """Endpoint parameter should override the default."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"results": {"bindings": []}}
+        mock_get.return_value = response
+
+        fetch_dbpedia_sparql_passages("python", endpoint="https://custom.example/sparql")
+
+        assert mock_get.call_args[0][0] == "https://custom.example/sparql"
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_uses_bif_contains_first(self, mock_get: MagicMock) -> None:
+        """Should try bif:contains (full-text) before falling back to CONTAINS."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"results": {"bindings": []}}
+        mock_get.return_value = response
+
+        fetch_dbpedia_sparql_passages("python programming")
+
+        # First call should use bif:contains
+        first_sparql = mock_get.call_args_list[0][1]["params"]["query"]
+        assert "bif:contains" in first_sparql
+
+    @patch("watson_lite.retrieval.bm25_retriever.requests.get")
+    def test_sparql_falls_back_to_contains(self, mock_get: MagicMock) -> None:
+        """When bif:contains returns nothing, should fall back to CONTAINS."""
+        empty_response = MagicMock()
+        empty_response.status_code = 200
+        empty_response.json.return_value = {"results": {"bindings": []}}
+        mock_get.return_value = empty_response
+
+        fetch_dbpedia_sparql_passages("python")
+
+        # Two calls: bif:contains then CONTAINS fallback
+        assert mock_get.call_count == 2
+        first_sparql = mock_get.call_args_list[0][1]["params"]["query"]
+        second_sparql = mock_get.call_args_list[1][1]["params"]["query"]
+        assert "bif:contains" in first_sparql
+        assert "FILTER(CONTAINS(" in second_sparql
