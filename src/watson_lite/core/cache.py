@@ -212,6 +212,19 @@ class Cache:
         if self._bloom.load_factor > 0.8:
             self._init_bloom()
 
+    def _maybe_shrink_bloom(self, deleted: int) -> None:
+        """Rebuild bloom filter after heavy pruning to clear stale bits.
+
+        When many entries are deleted, the bloom filter retains bits for keys
+        that no longer exist in the database, causing unnecessary SQLite lookups.
+        Rebuild when load factor drops below 0.3 after deleting ≥10% of entries.
+        """
+        if deleted <= 0 or self._entry_count <= 0:
+            return
+        ratio = deleted / (self._entry_count + deleted)
+        if ratio >= 0.1 and self._bloom.load_factor < 0.3:
+            self._init_bloom()
+
     def _count_entries(self) -> int:
         row = self.con.execute("SELECT COUNT(*) FROM cache").fetchone()
         return int(row[0]) if row else 0
@@ -262,6 +275,7 @@ class Cache:
         if deleted:
             self._entry_count = max(0, self._entry_count - deleted)
             self.con.commit()
+            self._maybe_shrink_bloom(deleted)
         return deleted
 
     def _delete_key(self, canonical_key: str) -> None:

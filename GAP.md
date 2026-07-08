@@ -163,17 +163,12 @@ as `DatasetProvider` instances in `pipeline.py` and are selectable via the
 
 #### GAP-10 — No learned confidence threshold / abstention (Paper 3)
 
-**What DeepQA does:** Learned a calibrated confidence threshold from training
-data; the system abstained when its top score was below the threshold (the
-Jeopardy! "buzzer" decision).
+**Status: Implemented**
 
-**What watson-lite does:** Always returns an answer with a raw confidence score.
-ECE calibration is measured in `evaluation/kpis.py` but is not used to gate
-output.
-
-**Where to fix:** `core/extractor.py` `ConfidenceScorer` — add an optional
-`threshold` field; return `"I don't know"` (or raise a distinct exception) when
-confidence is below it.  Expose `--confidence-threshold` in the CLI.
+`ConfidenceScorer.score()` gates on `confidence_threshold` and returns
+`"I don't know"` when confidence falls below it.  The threshold is exposed via
+`--confidence-threshold` in the CLI and wired through `FeatureConfig`.  ECE
+calibration is measured in `evaluation/kpis.py` for ongoing quality monitoring.
 
 ---
 
@@ -249,7 +244,7 @@ correct) triples; add a `train_from_log` utility that feeds them into the
 |---|---|---|---|
 | 1 | GAP-01 offline index | High | Open |
 | 2 | GAP-03 learned scorer | Medium | Open |
-| 3 | GAP-10 confidence threshold / abstention | Low | Open |
+| 3 | GAP-10 confidence threshold / abstention | Low | Implemented |
 | 4 | GAP-08 textual entailment | Medium | Implemented |
 | 5 | GAP-09 source diversity | Low | Implemented |
 | 6 | GAP-11 domain ontologies | Low | Open |

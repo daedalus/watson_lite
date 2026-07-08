@@ -269,7 +269,6 @@ class WatsonLite:
         return cast("bool", is_fallback_answer_text(answer.answer))
 
     @staticmethod
-    @staticmethod
     def _dedupe_passages(passages: list[Passage]) -> list[Passage]:
         seen_texts: set[str] = set()
         deduped: list[Passage] = []
