@@ -3,7 +3,7 @@ import time
 from typing import Any
 from urllib.error import HTTPError
 
-import requests  # noqa: F401 - re-exported for test mocks
+import requests  # noqa: F401  # pylint: disable=unused-import  # re-exported for test mocks
 
 try:
     from SPARQLWrapper import JSON, SPARQLWrapper

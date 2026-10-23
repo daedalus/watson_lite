@@ -205,12 +205,18 @@ class Cache:
         self._init_bloom()
 
     def _init_bloom(self) -> None:
-        """(Re)build the bloom filter from the keys currently in SQLite."""
-        self._bloom_capacity = max(1, self._entry_count) * _BLOOM_HEADROOM
-        self._bloom = BloomFilter(self._bloom_capacity)
+        """(Re)build the bloom filter from the keys currently in SQLite.
+
+        The new filter is only published once the scan succeeds, so a failed
+        rebuild leaves the previous (complete) filter in place.
+        """
+        capacity = max(1, self._entry_count) * _BLOOM_HEADROOM
+        bloom = BloomFilter(capacity)
         rows = self.con.execute("SELECT key FROM cache").fetchall()
         for (key,) in rows:
-            self._bloom.add(key)
+            bloom.add(key)
+        self._bloom_capacity = capacity
+        self._bloom = bloom
         self._bloom_stale = 0
 
     def _maybe_rebuild_bloom(self) -> None:
@@ -355,23 +361,26 @@ class Cache:
             return SENTINEL
 
     def set(self, key: str, value: Any, *, ttl_seconds: int | None = None) -> None:  # noqa: ANN401
+        if ttl_seconds is not None and ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive (greater than zero)")
+        canonical_key = self.canonicalize_key(key)
+        # Serialise outside the lock: ``default=str`` may run arbitrary
+        # ``__str__`` code, which must not be able to re-enter the cache.
+        # Wrap the value so that ``None`` is stored distinctly from a miss.
+        payload = json.dumps({"v": value}, default=str)
         with self._lock:
-            canonical_key = self.canonicalize_key(key)
             self._bloom.add(canonical_key)
-            if ttl_seconds is not None and ttl_seconds <= 0:
-                raise ValueError("ttl_seconds must be positive (greater than zero)")
             expires_at = time.time() + ttl_seconds if ttl_seconds is not None else None
             existing = self.con.execute(
                 "SELECT 1 FROM cache WHERE key = ?",
                 (canonical_key,),
             ).fetchone()
-            # Wrap the value so that ``None`` is stored distinctly from a miss.
             self.con.execute(
                 "INSERT OR REPLACE INTO cache (key, value, created_at, expires_at) "
                 "VALUES (?, ?, ?, ?)",
                 (
                     canonical_key,
-                    json.dumps({"v": value}, default=str),
+                    payload,
                     time.time(),
                     expires_at,
                 ),
@@ -404,6 +413,7 @@ class Cache:
 
 
 _cache: Cache | None = None
+_cache_init_lock = Lock()
 
 
 def _max_entries_from_env() -> int:
@@ -419,7 +429,9 @@ def _max_entries_from_env() -> int:
 def get_cache() -> Cache:
     global _cache
     if _cache is None:
-        max_entries = _max_entries_from_env()
-        _cache = Cache(max_entries=max_entries)
-        atexit.register(_cache.close)
+        with _cache_init_lock:
+            if _cache is None:
+                max_entries = _max_entries_from_env()
+                _cache = Cache(max_entries=max_entries)
+                atexit.register(_cache.close)
     return _cache

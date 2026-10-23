@@ -52,7 +52,7 @@ def _add_type_suffix_queries(
     seen: set[str],
 ) -> None:
     entity_str = " ".join(entity_texts)
-    for suffix in _INTERROGATIVE_SUFFIXES.get(question_word, ()):
+    for suffix in _INTERROGATIVE_SUFFIXES.get(question_word or "", ()):
         _add_variant(f"{entity_str} {suffix}", variants, seen)
 
 

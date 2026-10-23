@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tarfile
 from typing import TYPE_CHECKING
 
 import requests
@@ -24,9 +25,9 @@ def progress_bar(description: str, current: int, total: int) -> None:
     bar_w = max(10, term_w - len(description) - 12)
     fraction = min(current / total, 1.0)
     filled = int(bar_w * fraction)
-    bar = "█" * filled + "░" * (bar_w - filled)
+    meter = "█" * filled + "░" * (bar_w - filled)
     pct = fraction * 100
-    sys.stdout.write(f"\r{description}: [{bar}] {pct:5.1f}%")
+    sys.stdout.write(f"\r{description}: [{meter}] {pct:5.1f}%")
     sys.stdout.flush()
     if current >= total:
         sys.stdout.write("\n")
@@ -78,9 +79,8 @@ def download_with_resume(
 
     raw_total = 0
     try:
-        raw_total = int(
-            resp.raw.headers.get("Content-Length", 0)  # type: ignore[union-attr]
-        )
+        raw_headers = getattr(resp.raw, "headers", None) or {}
+        raw_total = int(raw_headers.get("Content-Length", 0))
     except (TypeError, ValueError, AttributeError):
         raw_total = 0
     total = int(resp.headers.get("Content-Length", raw_total))
@@ -105,8 +105,6 @@ def stream_extract_tar_member(
     archive_path: Path,
     member_path: str,
 ) -> bytes:
-    import tarfile
-
     with tarfile.open(archive_path, "r:gz") as tar:
         member = tar.getmember(member_path)
         f = tar.extractfile(member)

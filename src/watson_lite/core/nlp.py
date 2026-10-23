@@ -12,14 +12,17 @@ else:
     _SPACY_IMPORT_ERROR = None
 
 if TYPE_CHECKING:
-    from spacy.tokens import Doc
+    from spacy.language import Language
+    from spacy.tokens import Doc, Span
 else:  # pragma: no cover - runtime fallback used when type checking is inactive
     Doc = Any
+    Language = Any
+    Span = Any
 
 logger = logging.getLogger(__name__)
 
 
-def _ner_input(text: str, nlp: Any, language: str = "en") -> str:
+def _ner_input(text: str, nlp: Language, language: str = "en") -> str:
     """Build a version of *text* that triggers better NER.
 
     spaCy's NER uses casing as a strong signal.  Lowercased proper nouns
@@ -104,11 +107,11 @@ def _detect_question_word(doc: Doc) -> str | None:
         if token.pos_ == "PRON":
             pron_type = token.morph.get("PronType")
             if not pron_type or bool(set(pron_type) & {"Int", "Rel", "Ind"}):
-                return token.text.lower()
+                return str(token.text).lower()
         if token.pos_ == "SCONJ" and token.dep_ == "advmod":
-            return token.text.lower()
+            return str(token.text).lower()
         if token.pos_ == "DET" and token.dep_ == "det":
-            return token.text.lower()
+            return str(token.text).lower()
         # ADP whose head is interrogative PRON, e.g. "por" → "qué"
         if token.pos_ == "ADP":
             if token.head.pos_ == "PRON":
@@ -171,7 +174,7 @@ def _classify_question_word(doc: Doc, question_word: str | None) -> str | None:
     return None
 
 
-def _extract_lat(doc: Doc, question_type: str = "") -> tuple[str | None, list[str]]:
+def _extract_lat(doc: Doc) -> tuple[str | None, list[str]]:
     """Extract Lexical Answer Type using spaCy structural analysis.
 
     Returns (lat_headword, list_of_expected_qids). Returns (None, []) when no
@@ -325,7 +328,7 @@ class NLPProcessor:
         return "unknown"
 
     def extract_entities(self, doc: Doc) -> list[dict[str, str | int]]:
-        def _entity_has_verb(ent):
+        def _entity_has_verb(ent: Span) -> bool:
             return any(t.pos_ == "VERB" for t in ent)
 
         entities = []
@@ -459,7 +462,7 @@ class NLPProcessor:
         normalized = _ner_input(question, self.nlp, language=self.language)
         doc = self.nlp(normalized)
         question_type = self.classify_question(question)
-        lat, lat_qids = _extract_lat(doc, question_type)
+        lat, lat_qids = _extract_lat(doc)
         question_word = _detect_question_word(doc)
         question_word_type = _classify_question_word(doc, question_word)
         semantic_enabled = semantic_nlp or self.semantic_nlp

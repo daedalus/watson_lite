@@ -1289,9 +1289,7 @@ def fetch_dbpedia_sparql_passages(
         return [Passage(**p) for p in cached]
 
     resolved_endpoint = (
-        endpoint
-        or os.getenv(DBPEDIA_SPARQL_ENDPOINT_ENV)
-        or DBPEDIA_SPARQL_ENDPOINT
+        endpoint or os.getenv(DBPEDIA_SPARQL_ENDPOINT_ENV) or DBPEDIA_SPARQL_ENDPOINT
     )
     capped_top_k = min(top_k, 50)
 
@@ -1350,7 +1348,7 @@ def fetch_oeis_passages(query: str, *, top_k: int = WIKI_SEARCH_LIMIT) -> list[P
 class BM25Retriever:
     def __init__(self) -> None:
         self.passages: list[Passage] = []
-        self.retriever = None
+        self.retriever: bm25s.BM25 | None = None
 
     def index(self, passages: list[Passage]) -> None:
         self.passages = passages
@@ -1362,6 +1360,8 @@ class BM25Retriever:
         logger.debug("Indexed %d passages", len(passages))
 
     def save(self, path: str) -> None:
+        if self.retriever is None:
+            raise RuntimeError("BM25Retriever.save() called before index()")
         os.makedirs(path, exist_ok=True)
         self.retriever.save(path, show_progress=False)
         meta = [

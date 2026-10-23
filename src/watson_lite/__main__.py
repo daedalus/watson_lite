@@ -18,7 +18,7 @@ from watson_lite.pipeline import WatsonLite
 from watson_lite.retrieval.bm25_retriever import BM25Retriever
 from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
 from watson_lite.retrieval.dataset_query_engine import DatasetQueryEngine
-from watson_lite.retrieval.vector_retriever import VectorRetriever
+from watson_lite.retrieval.vector_retriever import EMBED_MODEL, VectorRetriever
 
 try:
     _VERSION = pkg_version("watson-lite")

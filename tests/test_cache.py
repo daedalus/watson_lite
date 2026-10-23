@@ -551,6 +551,86 @@ class TestBloomFilterAdversarial:
         os.unlink(path)
 
 
+class TestCacheReviewRegressions:
+    def test_failed_rebuild_keeps_previous_filter(self) -> None:
+        import sqlite3
+
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        c = Cache(path)
+        for i in range(20):
+            c.set(f"k:{i}", i)
+        before = c._bloom
+        real_con = c.con
+
+        class FailingScan:
+            def execute(self, sql: str, *args: object) -> sqlite3.Cursor:
+                if sql.startswith("SELECT key FROM cache"):
+                    raise sqlite3.OperationalError("disk I/O error")
+                return real_con.execute(sql, *args)
+
+        c.con = FailingScan()  # type: ignore[assignment]
+        with pytest.raises(sqlite3.OperationalError):
+            c._init_bloom()
+        c.con = real_con
+        assert c._bloom is before
+        for i in range(20):
+            assert c.get(f"k:{i}") == i
+        c.close()
+        os.unlink(path)
+
+    def test_get_cache_creates_one_instance_under_concurrency(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+        import time
+
+        import watson_lite.core.cache as cache_mod
+
+        created: list[object] = []
+
+        class SlowCache:
+            def __init__(self, **_kwargs: object) -> None:
+                time.sleep(0.05)
+                created.append(self)
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(cache_mod, "_cache", None)
+        monkeypatch.setattr(cache_mod, "Cache", SlowCache)
+        monkeypatch.setattr(cache_mod.atexit, "register", lambda _fn: None)
+        barrier = threading.Barrier(8)
+
+        def worker() -> object:
+            barrier.wait()
+            return cache_mod.get_cache()
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda _i: worker(), range(8)))
+        assert len(created) == 1
+        assert all(r is created[0] for r in results)
+
+    def test_set_does_not_deadlock_when_str_reenters_cache(self) -> None:
+        import threading
+
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        c = Cache(path)
+
+        class Reentrant:
+            def __str__(self) -> str:
+                return f"reentrant:{c.get('other')}"
+
+        t = threading.Thread(target=lambda: c.set("r", Reentrant()), daemon=True)
+        t.start()
+        t.join(timeout=5)
+        assert not t.is_alive(), "set() deadlocked on re-entrant __str__"
+        assert c.get("r") == "reentrant:None"
+        c.close()
+        os.unlink(path)
+
+
 class TestCacheEnvParsing:
     def test_max_entries_from_env_invalid(
         self, monkeypatch: pytest.MonkeyPatch

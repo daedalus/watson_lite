@@ -358,9 +358,6 @@ def _evaluate_labeled(
     )
 
 
-from collections.abc import Callable
-
-
 def _count(predicate: Callable[[FinalAnswer], bool], items: list[FinalAnswer]) -> int:
     return sum(1 for a in items if predicate(a))
 
@@ -402,9 +399,12 @@ def evaluate_kpis(
         raise ValueError("labels length must match answers length")
 
     total = len(answers)
-    grounded_pred = lambda a: (
-        a.url.startswith(("http://", "https://")) and len(a.supporting_passages) > 0
-    )
+
+    def grounded_pred(a: FinalAnswer) -> bool:
+        return (
+            a.url.startswith(("http://", "https://")) and len(a.supporting_passages) > 0
+        )
+
     success = _count(_is_success, answers)
     grounded = _count(grounded_pred, answers)
     graph = _count(

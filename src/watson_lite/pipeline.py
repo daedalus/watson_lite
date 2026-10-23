@@ -4,7 +4,6 @@ import os
 import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import cast
 
 import langdetect
 
@@ -31,7 +30,7 @@ from watson_lite.retrieval.bm25_retriever import (
 from watson_lite.retrieval.dataset_plugins import build_dataset_plugin_registry
 from watson_lite.retrieval.dataset_query_engine import DatasetQueryEngine
 from watson_lite.retrieval.query_formulation import generate_search_queries
-from watson_lite.retrieval.vector_retriever import EMBED_MODEL, VectorRetriever
+from watson_lite.retrieval.vector_retriever import VectorRetriever
 from watson_lite.scoring.double_check import bidirectional_score
 from watson_lite.scoring.entailment import configure_entailment_model
 
@@ -207,10 +206,7 @@ class WatsonLite:
         def _vector_work() -> list[Passage]:
             if needs_reindex:
                 vector_retriever.index_passages(passages)
-            return cast(
-                "list[Passage]",
-                vector_retriever.retrieve(question, top_k=top_k),
-            )
+            return vector_retriever.retrieve(question, top_k=top_k)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             bm25_future = executor.submit(_bm25_work)
@@ -266,7 +262,7 @@ class WatsonLite:
 
     @staticmethod
     def _is_fallback_answer(answer: FinalAnswer) -> bool:
-        return cast("bool", is_fallback_answer_text(answer.answer))
+        return is_fallback_answer_text(answer.answer)
 
     @staticmethod
     def _dedupe_passages(passages: list[Passage]) -> list[Passage]:
