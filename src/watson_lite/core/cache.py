@@ -24,6 +24,11 @@ SENTINEL = object()
 _SENTINEL = SENTINEL  # Backward-compat alias for internal imports.
 
 _BLOOM_ERROR_RATE = 0.01
+# The filter is sized for this many times the live entry count at build time.
+_BLOOM_HEADROOM = 10
+# Stale-key rebuilds are skipped below this many deletions to avoid churn on
+# tiny caches.
+_BLOOM_MIN_STALE_REBUILD = 64
 
 
 class BloomFilter:
@@ -92,7 +97,7 @@ class BloomFilter:
 
     @property
     def load_factor(self) -> float:
-        """Fraction of bits set to 1.  Used to decide when to resize."""
+        """Fraction of bits set to 1."""
         bits_set = sum(b.bit_count() for b in self._bits)
         return bits_set / self.m
 
@@ -192,38 +197,44 @@ class Cache:
         self._ensure_expires_column()
         self._entry_count = self._count_entries()
         self._writes_since_maintenance = 0
-        self._bloom_check_counter = 0
+        # One Cache (and its SQLite connection) is shared across retrieval
+        # worker threads; public methods hold this lock for their whole body.
+        self._lock = Lock()
+        self._bloom_stale = 0
         self._delete_expired()
         self._init_bloom()
 
     def _init_bloom(self) -> None:
-        capacity = max(1, self._entry_count) * 10
-        self._bloom = BloomFilter(capacity)
+        """(Re)build the bloom filter from the keys currently in SQLite."""
+        self._bloom_capacity = max(1, self._entry_count) * _BLOOM_HEADROOM
+        self._bloom = BloomFilter(self._bloom_capacity)
         rows = self.con.execute("SELECT key FROM cache").fetchall()
         for (key,) in rows:
             self._bloom.add(key)
+        self._bloom_stale = 0
 
-    def _maybe_grow_bloom(self) -> None:
-        self._bloom_check_counter += 1
-        interval = max(1, int(self._entry_count * 0.05))
-        if self._bloom_check_counter < interval:
-            return
-        self._bloom_check_counter = 0
-        if self._bloom.load_factor > 0.8:
-            self._init_bloom()
+    def _maybe_rebuild_bloom(self) -> None:
+        """Rebuild the bloom filter when it no longer matches the table.
 
-    def _maybe_shrink_bloom(self, deleted: int) -> None:
-        """Rebuild bloom filter after heavy pruning to clear stale bits.
-
-        When many entries are deleted, the bloom filter retains bits for keys
-        that no longer exist in the database, causing unnecessary SQLite lookups.
-        Rebuild when load factor drops below 0.3 after deleting ≥10% of entries.
+        Bits are never cleared on delete, so the filter holds every live key
+        plus every key deleted since the last rebuild.  Rebuild when that total
+        outgrows the capacity the filter was sized for (the false-positive rate
+        climbs) or when deleted keys outnumber live ones (most positives are
+        stale and cost a wasted SQLite lookup).  A rebuild is O(n), but another
+        one needs on the order of n further writes or deletes, so the cost is
+        amortised O(1) per operation.
         """
-        if deleted <= 0 or self._entry_count <= 0:
-            return
-        ratio = deleted / (self._entry_count + deleted)
-        if ratio >= 0.1 and self._bloom.load_factor < 0.3:
+        too_full = self._entry_count + self._bloom_stale > self._bloom_capacity
+        too_stale = (
+            self._bloom_stale >= _BLOOM_MIN_STALE_REBUILD
+            and self._bloom_stale > self._entry_count
+        )
+        if too_full or too_stale:
             self._init_bloom()
+
+    def _record_deletions(self, deleted: int) -> None:
+        self._entry_count = max(0, self._entry_count - deleted)
+        self._bloom_stale += deleted
 
     def _count_entries(self) -> int:
         row = self.con.execute("SELECT COUNT(*) FROM cache").fetchone()
@@ -255,7 +266,7 @@ class Cache:
         )
         deleted = int(cur.rowcount or 0)
         if deleted:
-            self._entry_count = max(0, self._entry_count - deleted)
+            self._record_deletions(deleted)
             self.con.commit()
         return deleted
 
@@ -273,16 +284,15 @@ class Cache:
         )
         deleted = int(cur.rowcount or 0)
         if deleted:
-            self._entry_count = max(0, self._entry_count - deleted)
+            self._record_deletions(deleted)
             self.con.commit()
-            self._maybe_shrink_bloom(deleted)
         return deleted
 
     def _delete_key(self, canonical_key: str) -> None:
         cur = self.con.execute("DELETE FROM cache WHERE key = ?", (canonical_key,))
         deleted = int(cur.rowcount or 0)
         if deleted:
-            self._entry_count = max(0, self._entry_count - deleted)
+            self._record_deletions(deleted)
             self.con.commit()
 
     @staticmethod
@@ -304,19 +314,20 @@ class Cache:
            Legacy cache rows (stored before the ``{"v": …}`` wrapping was
            introduced) are handled transparently via :meth:`_unwrap`.
         """
-        canonical_key = self.canonicalize_key(key)
-        if not self._bloom.query(canonical_key):
-            return None
-        row = self.con.execute(
-            "SELECT value, expires_at FROM cache WHERE key = ?", (canonical_key,)
-        ).fetchone()
-        if row:
-            expires_at = row[1]
-            if expires_at is not None and float(expires_at) <= time.time():
-                self._delete_key(canonical_key)
+        with self._lock:
+            canonical_key = self.canonicalize_key(key)
+            if not self._bloom.query(canonical_key):
                 return None
-            return self._unwrap(row[0])
-        return None
+            row = self.con.execute(
+                "SELECT value, expires_at FROM cache WHERE key = ?", (canonical_key,)
+            ).fetchone()
+            if row:
+                expires_at = row[1]
+                if expires_at is not None and float(expires_at) <= time.time():
+                    self._delete_key(canonical_key)
+                    return None
+                return self._unwrap(row[0])
+            return None
 
     def get_or_sentinel(self, key: str) -> Any:  # noqa: ANN401
         """Return the cached value, or :data:`SENTINEL` on a miss.
@@ -324,69 +335,72 @@ class Cache:
         Unlike :meth:`get`, this lets callers distinguish a cached ``None``
         from an absent key.
         """
-        canonical_key = self.canonicalize_key(key)
-        if not self._bloom.query(canonical_key):
-            _record_cache_miss(canonical_key)
-            return SENTINEL
-        row = self.con.execute(
-            "SELECT value, expires_at FROM cache WHERE key = ?", (canonical_key,)
-        ).fetchone()
-        if row:
-            expires_at = row[1]
-            if expires_at is not None and float(expires_at) <= time.time():
-                self._delete_key(canonical_key)
+        with self._lock:
+            canonical_key = self.canonicalize_key(key)
+            if not self._bloom.query(canonical_key):
                 _record_cache_miss(canonical_key)
                 return SENTINEL
-            _record_cache_hit(canonical_key)
-            return self._unwrap(row[0])
-        _record_cache_miss(canonical_key)
-        return SENTINEL
+            row = self.con.execute(
+                "SELECT value, expires_at FROM cache WHERE key = ?", (canonical_key,)
+            ).fetchone()
+            if row:
+                expires_at = row[1]
+                if expires_at is not None and float(expires_at) <= time.time():
+                    self._delete_key(canonical_key)
+                    _record_cache_miss(canonical_key)
+                    return SENTINEL
+                _record_cache_hit(canonical_key)
+                return self._unwrap(row[0])
+            _record_cache_miss(canonical_key)
+            return SENTINEL
 
     def set(self, key: str, value: Any, *, ttl_seconds: int | None = None) -> None:  # noqa: ANN401
-        canonical_key = self.canonicalize_key(key)
-        self._bloom.add(canonical_key)
-        if ttl_seconds is not None and ttl_seconds <= 0:
-            raise ValueError("ttl_seconds must be positive (greater than zero)")
-        expires_at = time.time() + ttl_seconds if ttl_seconds is not None else None
-        existing = self.con.execute(
-            "SELECT 1 FROM cache WHERE key = ?",
-            (canonical_key,),
-        ).fetchone()
-        # Wrap the value so that ``None`` is stored distinctly from a miss.
-        self.con.execute(
-            "INSERT OR REPLACE INTO cache (key, value, created_at, expires_at) "
-            "VALUES (?, ?, ?, ?)",
-            (
-                canonical_key,
-                json.dumps({"v": value}, default=str),
-                time.time(),
-                expires_at,
-            ),
-        )
-        self.con.commit()
-        if existing is None:
-            self._entry_count += 1
-        self._writes_since_maintenance += 1
-        needs_maintenance = (
-            self._writes_since_maintenance >= _MAINTENANCE_INTERVAL_WRITES
-            or self._entry_count > self.max_entries
-        )
-        if needs_maintenance:
-            self._delete_expired()
-            self._prune_if_needed()
-            self._writes_since_maintenance = 0
-        self._maybe_grow_bloom()
+        with self._lock:
+            canonical_key = self.canonicalize_key(key)
+            self._bloom.add(canonical_key)
+            if ttl_seconds is not None and ttl_seconds <= 0:
+                raise ValueError("ttl_seconds must be positive (greater than zero)")
+            expires_at = time.time() + ttl_seconds if ttl_seconds is not None else None
+            existing = self.con.execute(
+                "SELECT 1 FROM cache WHERE key = ?",
+                (canonical_key,),
+            ).fetchone()
+            # Wrap the value so that ``None`` is stored distinctly from a miss.
+            self.con.execute(
+                "INSERT OR REPLACE INTO cache (key, value, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    canonical_key,
+                    json.dumps({"v": value}, default=str),
+                    time.time(),
+                    expires_at,
+                ),
+            )
+            self.con.commit()
+            if existing is None:
+                self._entry_count += 1
+            self._writes_since_maintenance += 1
+            needs_maintenance = (
+                self._writes_since_maintenance >= _MAINTENANCE_INTERVAL_WRITES
+                or self._entry_count > self.max_entries
+            )
+            if needs_maintenance:
+                self._delete_expired()
+                self._prune_if_needed()
+                self._writes_since_maintenance = 0
+            self._maybe_rebuild_bloom()
 
     def clear(self) -> None:
-        self.con.execute("DELETE FROM cache")
-        self.con.commit()
-        self._entry_count = 0
-        self._writes_since_maintenance = 0
-        self._bloom_check_counter = 0
-        self._init_bloom()
+        with self._lock:
+            self.con.execute("DELETE FROM cache")
+            self.con.commit()
+            self._entry_count = 0
+            self._writes_since_maintenance = 0
+            self._init_bloom()
 
     def close(self) -> None:
-        self.con.close()
+        with self._lock:
+            self.con.close()
 
 
 _cache: Cache | None = None

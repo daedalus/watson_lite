@@ -430,67 +430,123 @@ class TestBloomFilterAdversarial:
             sizes.add(bf.m)
         assert len(sizes) == 1
 
-    def test_grow_check_counter_increments_on_set(self) -> None:
+    def test_rebuild_is_amortised(self, monkeypatch: pytest.MonkeyPatch) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
-        c = Cache(path)
-        assert c._bloom_check_counter == 0
-        c.set("a", 1)
-        # interval = 1 (entry_count=1) → check fires, counter resets to 0
-        assert c._bloom_check_counter == 0
+        c = Cache(path, max_entries=100)
+        calls = 0
+        original = c._init_bloom
+
+        def counting_init() -> None:
+            nonlocal calls
+            calls += 1
+            original()
+
+        monkeypatch.setattr(c, "_init_bloom", counting_init)
+        for i in range(2000):
+            c.set(f"k:{i}", i)
+        # One rebuild per ~max(64, entries) prunes, not one per set.
+        assert 0 < calls < 2000 // 50
         c.close()
         os.unlink(path)
 
-    def test_grow_check_counter_accumulates_within_interval(self) -> None:
+    def test_bloom_stays_within_capacity(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
         c = Cache(path, max_entries=5000)
-        # Pre-fill so entry_count is high and interval > 1
-        for i in range(80):
+        for i in range(1500):
             c.set(f"k:{i}", i)
-        assert c._entry_count == 80
-        # interval = max(1, int(80 * 0.05)) = 4
-        c._bloom_check_counter = 0
-        c.set("accumulate", 1)
-        assert c._bloom_check_counter == 1
-        c.set("accumulate2", 2)
-        assert c._bloom_check_counter == 2
+            assert c._entry_count + c._bloom_stale <= c._bloom_capacity
         c.close()
         os.unlink(path)
 
-    def test_grow_check_counter_does_not_fire_on_empty_cache(self) -> None:
+    def test_heavy_pruning_clears_stale_bits(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
-        c = Cache(path)
-        c.set("only", 1)
-        # entry_count = 1 → interval = max(1, int(1 * 0.05)) = 1 → fires on every set
-        assert c._bloom_check_counter == 0
+        c = Cache(path, max_entries=50)
+        n = 1000
+        for i in range(n):
+            c.set(f"p:{i}", i)
+        assert c._entry_count == 50
+        pruned = [f"p:{i}" for i in range(n - 50)]
+        still_in_bloom = sum(c._bloom.query(k) for k in pruned)
+        # Only keys pruned since the last rebuild (plus rare false positives)
+        # may still pass the filter.
+        assert still_in_bloom <= c._bloom_stale + len(pruned) // 20
+        assert still_in_bloom < len(pruned) // 5
+        for i in range(n - 50, n):
+            assert c.get(f"p:{i}") == i
         c.close()
         os.unlink(path)
 
-    def test_grow_check_is_throttled(self) -> None:
+    def test_ttl_expiry_clears_stale_bits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import time
+
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
-        c = Cache(path, max_entries=500)
-        for i in range(200):
-            c.set(f"k:{i}", i)
-        assert c._bloom_check_counter < 200  # not every set triggered a check
-        # All keys still reachable
-        for i in range(200):
-            assert c.get(f"k:{i}") == i
+        c = Cache(path, max_entries=5000)
+        for i in range(500):
+            c.set(f"neg:{i}", None, ttl_seconds=60)
+        for i in range(20):
+            c.set(f"keep:{i}", i)
+        now = time.time()
+        monkeypatch.setattr(time, "time", lambda: now + 120)
+        # Enough writes to reach the next maintenance pass.
+        for i in range(20, 50):
+            c.set(f"keep:{i}", i)
+        assert c._entry_count == 50
+        assert c._bloom_stale == 0
+        still_in_bloom = sum(c._bloom.query(f"neg:{i}") for i in range(500))
+        assert still_in_bloom < 25
+        for i in range(50):
+            assert c.get(f"keep:{i}") == i
         c.close()
         os.unlink(path)
 
-    def test_grow_check_counter_resets_on_clear(self) -> None:
+    def test_restart_with_smaller_limit_rebuilds_on_next_set(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
-        c = Cache(path)
-        c.set("a", 1)
-        c.set("b", 2)
-        assert c._bloom_check_counter == 0  # reset after check on second set
+        c = Cache(path, max_entries=5000)
+        for i in range(1000):
+            c.set(f"r:{i}", i)
+        c.close()
+        c = Cache(path, max_entries=100)
+        c.set("trigger", 1)
+        assert c._entry_count == 100
+        assert c._bloom_stale == 0
+        assert c._bloom_capacity == 100 * 10
+        c.close()
+        os.unlink(path)
+
+    def test_concurrent_sets_survive_rebuilds(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        c = Cache(path, max_entries=100_000)
+
+        def writer(t: int) -> None:
+            for i in range(300):
+                c.set(f"t{t}:{i}", i)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(writer, range(8)))
+        for t in range(8):
+            for i in range(300):
+                assert c.get(f"t{t}:{i}") == i, f"t{t}:{i} missing from bloom"
+        c.close()
+        os.unlink(path)
+
+    def test_clear_resets_bloom_bookkeeping(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        c = Cache(path, max_entries=10)
+        for i in range(30):
+            c.set(f"c:{i}", i)
         c.clear()
-        assert c._bloom_check_counter == 0
         assert c._entry_count == 0
+        assert c._bloom_stale == 0
+        assert c._bloom_capacity == 10
         c.close()
         os.unlink(path)
 
