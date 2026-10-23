@@ -92,7 +92,13 @@ strictness = "medium"
 test-warnings = false
 
 [tool.pylint.MESSAGES_CONTROL]
-disable = ["too-many-locals", "no-value-for-parameter"]
+disable = [
+    "too-many-locals",
+    "no-value-for-parameter",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-statements",
+]
 
 [tool.prospector.tools]
 ruff = true

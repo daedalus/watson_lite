@@ -93,13 +93,15 @@ def main() -> None:
     )
 
     if args.run:
+        # Lazy: the fetch-only path must not import the full pipeline.
+        # pylint: disable=import-outside-toplevel
         from watson_lite.core.config import FeatureConfig
         from watson_lite.evaluation.benchmark_runner import (
             run_benchmark_profiles,
         )
 
         print("Running benchmark in-process ...")
-        results, regressions = run_benchmark_profiles(
+        _results, regressions = run_benchmark_profiles(
             dataset_path=args.output,
             config=FeatureConfig.baseline(),
             output_json_path=args.output.replace(".json", "_results.json"),

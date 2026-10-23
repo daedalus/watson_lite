@@ -387,7 +387,7 @@ class ConfidenceScorer:
             and signals["best_qid"] is not None
         ):
             confidence = round(confidence * 0.3, 3)
-        return confidence
+        return float(confidence)
 
     @staticmethod
     def _build_score_answer(
